@@ -17,6 +17,7 @@ ApiServer::ApiServer(int port) {
 
     // We create a new TCP PCB (Protocol Control Block) for our server
     // that is listening on any IP address (IPADDR_ANY)
+    printf("[api] ctor: creating pcb\n");
     this->m_server_pcb = tcp_new_ip_type(IPADDR_ANY);
     if (this->m_server_pcb == nullptr) {
         // Handle error: unable to create PCB
@@ -35,6 +36,7 @@ ApiServer::ApiServer(int port) {
 
     // We set the PCB to listen for incoming connections
     this->m_server_pcb = tcp_listen(this->m_server_pcb);
+    printf("[api] ctor: listening on port %d (pcb %p)\n", this->m_port, (void*)this->m_server_pcb);
     tcp_arg(this->m_server_pcb, this);
     tcp_accept(this->m_server_pcb, on_accept);
 
@@ -66,6 +68,7 @@ void ApiServer::add_endpoint(const char* path, const Method method, EndpointHand
  * We set the argument to the ApiServer instance so we can access it in the callback
  */
 err_t ApiServer::on_accept(void* arg, tcp_pcb* new_pcb, err_t err) {
+    printf("[api] on_accept: err=%d pcb=%p\n", err, (void*)new_pcb);
     if (err != ERR_OK || new_pcb == nullptr) return ERR_VAL;
 
     auto server = static_cast<ApiServer*>(arg);
@@ -79,7 +82,7 @@ err_t ApiServer::on_accept(void* arg, tcp_pcb* new_pcb, err_t err) {
 }
 
 void ApiServer::on_error(void* arg, err_t err) {
-    printf("TCP error: %d\n", err);
+    printf("[api] on_error: err=%d state=%p\n", err, (void*)arg);
     // lwIP has already freed the pcb when this callback runs; only drop our state.
     delete static_cast<ConnectionState*>(arg);
 }
@@ -88,6 +91,8 @@ void ApiServer::on_error(void* arg, err_t err) {
 // We route the request to the appropriate handler based on the registered endpoints
 err_t ApiServer::on_recv(void* arg, tcp_pcb* tpcb, pbuf* p, err_t err) {
     auto state = static_cast<ConnectionState*>(arg);
+    printf("[api] on_recv: pcb=%p pbuf=%p tot_len=%u err=%d\n",
+           (void*)tpcb, (void*)p, p ? p->tot_len : 0, err);
 
     // Was the connection closed by the client?
     if (p == nullptr) {
@@ -111,6 +116,8 @@ err_t ApiServer::on_recv(void* arg, tcp_pcb* tpcb, pbuf* p, err_t err) {
 // once the whole response has been transmitted and acknowledged.
 err_t ApiServer::on_sent(void* arg, tcp_pcb* tpcb, u16_t len) {
     auto state = static_cast<ConnectionState*>(arg);
+    printf("[api] on_sent: pcb=%p acked=%u progress=%zu/%zu\n",
+           (void*)tpcb, len, state->tx_offset, state->tx.size());
 
     if (state->tx_offset < state->tx.size()) {
         state->server->pump_tx(tpcb, *state);
@@ -125,6 +132,7 @@ err_t ApiServer::on_sent(void* arg, tcp_pcb* tpcb, u16_t len) {
 }
 
 void ApiServer::close_connection(tcp_pcb* tpcb, ConnectionState* state) {
+    printf("[api] close_connection: pcb=%p state=%p\n", (void*)tpcb, (void*)state);
     // Deregister all callbacks before closing. After tcp_close() the pcb is
     // not freed immediately: it lingers in FIN_WAIT/LAST_ACK until the FIN
     // handshake completes, and incoming packets during that time would still
@@ -135,7 +143,9 @@ void ApiServer::close_connection(tcp_pcb* tpcb, ConnectionState* state) {
     tcp_sent(tpcb, nullptr);
     tcp_err(tpcb, nullptr);
 
-    if (tcp_close(tpcb) != ERR_OK) {
+    err_t close_err = tcp_close(tpcb);
+    printf("[api] close_connection: tcp_close -> %d\n", close_err);
+    if (close_err != ERR_OK) {
         // Closing failed (no memory for the FIN segment): abort instead.
         // This frees the pcb immediately and, since the error callback was
         // cleared above, nothing is called back.
@@ -184,6 +194,8 @@ err_t ApiServer::handle_recv(tcp_pcb* tpcb, pbuf* p, ConnectionState& state) {
         return ERR_OK;
     }
 
+    printf("[api] handle_recv: request complete, %zu bytes (body_offset=%zu, content_length=%zu)\n",
+           state.rx.size(), body_offset, content_length);
     route_request(tpcb, state, body_offset);
     state.rx.clear();
 
@@ -242,6 +254,8 @@ void ApiServer::route_request(tcp_pcb* tpcb, ConnectionState& state, std::size_t
     // calls us once Content-Length bytes are present, so this is complete.
     std::string_view body = request_view.substr(body_offset);
 
+    printf("[api] route_request: %s %s\n", method == Method::GET ? "GET" : "POST", path.c_str());
+
     // Call the handler function for the endpoint
     EndpointHandlerFunc handler = it->second;
     if (handler) {
@@ -264,6 +278,7 @@ void ApiServer::send_response(tcp_pcb* tpcb, ConnectionState& state, int status,
     state.tx += "\r\n";
     state.tx += body;
 
+    printf("[api] send_response: status=%d, %zu bytes total\n", status, state.tx.size());
     pump_tx(tpcb, state);
 }
 
@@ -284,12 +299,16 @@ void ApiServer::pump_tx(tcp_pcb* tpcb, ConnectionState& state) {
         if (err == ERR_MEM) {
             // Out of lwIP memory; the rest is sent from on_sent as
             // previously queued data gets acknowledged and freed.
+            printf("[api] pump_tx: ERR_MEM at offset=%zu/%zu\n", state.tx_offset, state.tx.size());
             break;
         }
         if (err != ERR_OK) {
-            printf("tcp_write failed: %d\n", err);
+            printf("[api] pump_tx: tcp_write failed: %d (offset=%zu/%zu)\n",
+                   err, state.tx_offset, state.tx.size());
             break;
         }
+        printf("[api] pump_tx: wrote %u bytes (offset=%zu/%zu, sndbuf=%u)\n",
+               chunk, state.tx_offset + chunk, state.tx.size(), avail);
 
         state.tx_offset += chunk;
     }
