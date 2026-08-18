@@ -21,6 +21,21 @@ SharedData sharedData {
     .ledState = false
 };
 
+// ---- LED driving (PIO + DMA) ------------------------------------------------
+
+constexpr int kLedPin = 28;
+constexpr uint kLedsPerColumn = 75;
+constexpr uint8_t kActiveColumn = 0; // drive only this column for now
+
+static PIO led_pio = pio0;
+static uint led_sm;
+static int led_dma_chan;
+
+// One column of pixels converted to the on-the-wire format the PIO expects.
+// Kept separate from the matrix so a frame is a consistent snapshot even if
+// an HTTP request updates the matrix mid-frame.
+static uint32_t frame_buf[kLedsPerColumn];
+
 int init_hardware() {
     stdio_init_all();
 
@@ -34,31 +49,56 @@ int init_hardware() {
         return -1;
     }
 
-    int dma_chan = dma_claim_unused_channel(true);
+    led_dma_chan = dma_claim_unused_channel(true);
 
-    PIO pio = pio0;
-    uint offset = pio_add_program(pio, &sample_program);
-    uint sm = pio_claim_unused_sm(pio, true);
+    uint offset = pio_add_program(led_pio, &ws2812_program);
+    led_sm = pio_claim_unused_sm(led_pio, true);
 
-    pio_sm_config c = sample_program_get_default_config(offset);
+    pio_sm_config c = ws2812_program_get_default_config(offset);
 
-    const int pin = 28;
+    pio_gpio_init(led_pio, kLedPin);
+    pio_sm_set_consecutive_pindirs(led_pio, led_sm, kLedPin, 1, true);
 
-    pio_gpio_init(pio, pin);
-    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
-
-    sm_config_set_sideset_pins(&c, pin);
+    sm_config_set_sideset_pins(&c, kLedPin);
+    // Shift left (MSB first), autopull a fresh word every 24 bits.
     sm_config_set_out_shift(&c, false, true, 24);
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
 
-    int cycles_per_bit = 10;
-    float div = clock_get_hz(clk_sys) / (800000.0f * cycles_per_bit);
+    // The program spends (T1 + T2 + T3) cycles per bit; WS2812 wants 800 kbit/s.
+    float div = clock_get_hz(clk_sys) / (800000.0f * (ws2812_T1 + ws2812_T2 + ws2812_T3));
     sm_config_set_clkdiv(&c, div);
 
-    pio_sm_init(pio, sm, offset, &c);
-    pio_sm_set_enabled(pio, sm, true);
+    pio_sm_init(led_pio, led_sm, offset, &c);
+    pio_sm_set_enabled(led_pio, led_sm, true);
 
     return 0;
+}
+
+// Snapshot one matrix column into frame_buf, converting each pixel to the
+// wire format: 24 bits GRB, MSB first, left-justified in a 32-bit word.
+static void load_column(uint8_t col) {
+    LwipGuard guard{};
+    for (uint i = 0; i < kLedsPerColumn; ++i) {
+        const Pixel& p = sharedData.matrix.columns[col].pixels[i];
+        frame_buf[i] = (uint32_t)p.g << 24 | (uint32_t)p.r << 16 | (uint32_t)p.b << 8;
+    }
+}
+
+// Hand the frame buffer to the DMA engine, which feeds the state machine's
+// TX FIFO at exactly the rate the SM drains it (DREQ pacing). The CPU is
+// free while the transfer runs.
+static void start_frame_dma(const uint32_t* data, uint32_t word_count) {
+    dma_channel_config c = dma_channel_get_default_config(led_dma_chan);
+    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+    channel_config_set_read_increment(&c, true);   // walk through the buffer
+    channel_config_set_write_increment(&c, false); // always the same FIFO
+    channel_config_set_dreq(&c, pio_get_dreq(led_pio, led_sm, true));
+
+    dma_channel_configure(led_dma_chan, &c,
+        &led_pio->txf[led_sm], // dst: state machine TX FIFO
+        data,                  // src: pixel words
+        word_count,
+        true);                 // start immediately
 }
 
 void setup_routes(ApiServer& server) {
@@ -148,20 +188,21 @@ int main() {
         }
     }
 
-    int ledIndex = 0;
-    int bitIndex = 0;
-
     while (true) {
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, sharedData.ledState);   
-        
-        uint32_t bits = sharedData.matrix.getRowData(ledIndex, bitIndex);
-        bitIndex = (bitIndex + 1) % 24;
-        if (bitIndex == 0) {
-            ledIndex = (ledIndex + 1) % 75;
-        }
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, sharedData.ledState);
 
-        // Send the bits to the PIO state machine
-        pio_sm_put_blocking(pio0, 0, bits);
+        load_column(kActiveColumn);
+        start_frame_dma(frame_buf, kLedsPerColumn);
+
+        // Wait for the DMA to finish, then for the TX FIFO to drain...
+        dma_channel_wait_for_finish_blocking(led_dma_chan);
+        while (!pio_sm_is_tx_fifo_empty(led_pio, led_sm)) {
+            tight_loop_contents();
+        }
+        // ...then hold the line low so the strip latches the frame.
+        // Modern WS2812 clones need >= 280 us of low time; 400 us also
+        // covers the last word still shifting out of the OSR (~30 us).
+        sleep_us(400);
     }
 
     return 0;
