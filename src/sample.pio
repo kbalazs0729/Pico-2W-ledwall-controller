@@ -1,0 +1,35 @@
+.program sample
+
+; Minimal PIO instructions placeholder
+.wrap_target
+    pull block
+    out pins, 1
+.wrap
+
+% c-sdk {
+#include "hardware/pio.h"
+
+static inline void sample_program_init(PIO pio, uint sm, uint offset) {
+    pio_sm_config c = sample_program_get_default_config(offset);
+
+    // --- GPIO Setup ---
+    // Example: pio_gpio_init(pio, MY_PIN);
+    // Example: pio_sm_set_consecutive_pindirs(pio, sm, MY_PIN, count, is_output);
+
+    // --- Pin Mapping ---
+    // Example: sm_config_set_out_pins(&c, out_base, count);
+    // Example: sm_config_set_in_pins(&c, in_base);
+    // Example: sm_config_set_sideset_pins(&c, sideset_base);
+
+    // --- Shift Register Settings ---
+    // Example: sm_config_set_out_shift(&c, shift_right, autopull, pull_threshold);
+    // Example: sm_config_set_in_shift(&c, shift_right, autopush, push_threshold);
+
+    // --- Clock Divider ---
+    // Example: sm_config_set_clkdiv(&c, div);
+
+    // Load state machine configuration and start
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}
