@@ -39,7 +39,24 @@ int init_hardware() {
     PIO pio = pio0;
     uint offset = pio_add_program(pio, &sample_program);
     uint sm = pio_claim_unused_sm(pio, true);
-    sample_program_init(pio, sm, offset);
+
+    pio_sm_config c = sample_program_get_default_config(offset);
+
+    const int pin = 28;
+
+    pio_gpio_init(pio, pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 1, true);
+
+    sm_config_set_sideset_pins(&c, pin);
+    sm_config_set_out_shift(&c, false, true, 24);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+
+    int cycles_per_bit = 10;
+    float div = clock_get_hz(clk_sys) / (800000.0f * cycles_per_bit);
+    sm_config_set_clkdiv(&c, div);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
 
     return 0;
 }
@@ -131,18 +148,20 @@ int main() {
         }
     }
 
-    // Convert the matrix to a base64 string and print it
-    uint8_t* matrixData = reinterpret_cast<uint8_t*>(&sharedData.matrix);
-    std::size_t matrixSize = sizeof(sharedData.matrix);
-    
-    std::string base64Matrix {};
-    toBase64(matrixData, matrixSize, base64Matrix);
-    
-    //printf("Base64 Encoded Matrix Data: %s\n", base64Matrix.c_str());
+    int ledIndex = 0;
+    int bitIndex = 0;
 
     while (true) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, sharedData.ledState);   
-        sleep_ms(1000);
+        
+        uint32_t bits = sharedData.matrix.getRowData(ledIndex, bitIndex);
+        bitIndex = (bitIndex + 1) % 24;
+        if (bitIndex == 0) {
+            ledIndex = (ledIndex + 1) % 75;
+        }
+
+        // Send the bits to the PIO state machine
+        pio_sm_put_blocking(pio0, 0, bits);
     }
 
     return 0;
