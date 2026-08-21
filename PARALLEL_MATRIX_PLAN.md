@@ -33,11 +33,18 @@ Parallel output uses the PIO instructions `out pins, N` / `mov pins`, which
 can **only write to N consecutive GPIO pins starting at a base pin**.
 There is no arbitrary pin remapping — this is a hard hardware constraint.
 
-→ Use **GP0 … GP20**, one per column:
+→ Use one consecutive run **GP0 … GP22** (23 pins), one per column with the
+bus-IC grouping 7+7+7 (see "Chosen pin grouping" below):
 
 ```
-GP0 → col 0, GP1 → col 1, … GP20 → col 20
+GP0–6   → col 0–6    (IC 1)
+GP7–13  → col 7–13   (IC 2)
+GP14–15 → NOT WIRED  (padded, see below)
+GP16–22 → col 14–20  (IC 3)
 ```
+
+Column *c* maps to bit *c* of every plane word, i.e. to GP*c* — the two
+skipped pins simply carry dummy bits.
 
 - Avoid GP23/GP24/GP25/GP29 (used by the CYW43 WiFi chip on Pico W / Pico 2 W)
   and GP26–28 (ADC, and GP28 is currently used by the single-lane test build).
@@ -48,30 +55,31 @@ GP0 → col 0, GP1 → col 1, … GP20 → col 20
   oscillate). GP14/GP15 could be routed through the spare channels as spare
   lanes for future expansion.
 
-### Alternative pin grouping: 2 runs × 2 SMs (chosen for PCB layout)
+### Chosen pin grouping: one 23-pin run with GP14/GP15 padded
 
-The 21 lanes are split into two consecutive runs, one per bus-IC group:
+The bus-IC routing leaves GP14/GP15 unused, splitting the lanes into
+GP0–13 (14 lanes) and GP16–22 (7 lanes). Instead of two SMs, a **single
+SM drives the full consecutive run GP0–GP22 (23 pins)** and the two
+middle pins are simply never wired to anything:
 
-| Run | Pins | Lanes | SM program |
-|-----|------|-------|------------|
-| A | GP0 – GP13 | 14 | `out x, 14` |
-| B | GP16 – GP22 | 7 | `out x, 7` |
+- `out x, 23`, `sm_config_set_out_pins(&c, 0, 23)`, autopull threshold 23,
+  pindirs + `pio_gpio_init` for GP0–GP22.
+- In the transpose, bits 14/15 of every plane word are kept at 0.
+- GP14/GP15 therefore emit a permanent **'0'-bit waveform** (a ~250 ns pulse
+  every 1.25 µs — the `mov pins, !null` phase drives ALL pins in the run
+  high regardless of data). Harmless: they are PIO outputs driving
+  unconnected pads. Requirement: GP14/GP15 stay genuinely free (USB stdio
+  is used, not UART) and nothing is ever wired to them.
+- Single SM, single DMA channel, single buffer — no split logic anywhere.
+- Frame time unchanged: 75 × 24 × 1.25 µs ≈ 2.25 ms.
 
-(GP14/GP15 are skipped; CYW43/ADC pins remain untouched.)
+### Rejected alternative: 2 runs × 2 SMs
 
-Consequences vs. a single 21-pin run:
-
-- **2 state machines + 2 DMA channels** (RP2350 has 12 SMs — plenty).
-  The `out` bit count is baked into the instruction, so the program is
-  listed twice, identical except for `out x, 14` / `out x, 7`.
-- The transpose splits each 21-bit plane word into two buffers:
-  `planeA = plane & 0x3FFF`, `planeB = (plane >> 14) & 0x7F`.
-- **Lanes do not need to be synchronized** — each strip is self-clocked and
-  latches on its own gap. Still start both SMs together with
-  `pio_enable_sm_mask_in_sync` to keep frames aligned.
-- Frame end: wait for **both** DMA channels and **both** TX FIFOs to drain,
-  then one shared 400 µs latch gap.
-- Frame time is unchanged: 75 × 24 × 1.25 µs ≈ 2.25 ms.
+Two SMs (GP0–13 with `out x, 14`, GP16–22 with `out x, 7`) each fed by
+their own DMA channel, with the transpose splitting each plane word into
+`plane & 0x3FFF` / `(plane >> 14) & 0x7F`. Works, but strictly more
+complex than the padded single-SM approach above; kept here only as a
+fallback if GP14/GP15 ever need to serve another function.
 
 ### Pico 2 W (RP2350) port notes
 
@@ -116,8 +124,8 @@ the waveform is shaped with `mov pins`:
 .define public T3 3
 
 .wrap_target
-    out x, 21                  ; grab one bit per column (one "bit-plane")
-    mov pins, !null [T1 - 1]   ; ALL 21 pins high for T1 cycles
+    out x, 23                  ; grab one bit per pin (one "bit-plane")
+    mov pins, !null [T1 - 1]   ; ALL 23 pins high for T1 cycles
     mov pins, x     [T2 - 1]   ; bit=1 stays high, bit=0 drops low
     mov pins, null  [T3 - 1]   ; ALL 21 pins low for T3 cycles
 .wrap
@@ -136,17 +144,18 @@ and the pins hold the low level left by the last `mov pins, null`.
 C-side SM config differences vs. the single-lane version:
 
 ```c
-pio_gpio_init(s_pio, basePin + c);                 // for all 21 pins
-pio_sm_set_consecutive_pindirs(s_pio, s_sm, basePin, 21, true);
-sm_config_set_out_pins(&c, basePin, 21);           // NEW (was sideset)
+pio_gpio_init(s_pio, basePin + c);                 // for all 23 pins
+pio_sm_set_consecutive_pindirs(s_pio, s_sm, basePin, 23, true);
+sm_config_set_out_pins(&c, basePin, 23);           // NEW (was sideset)
 // NO sideset config
-sm_config_set_out_shift(&c, true, true, 21);       // shift RIGHT, autopull every 21 bits
+sm_config_set_out_shift(&c, true, true, 23);       // shift RIGHT, autopull every 23 bits
 sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
 sm_config_set_clkdiv(&c, clock_get_hz(clk_sys) / (800000.0f * (T1+T2+T3)));
 ```
 
-With shift-right + `out x, 21`, the **LSB of each word goes to the base pin**:
+With shift-right + `out x, 23`, the **LSB of each word goes to the base pin**:
 bit *c* of every FIFO word is the data bit for column *c* on GP(basePin + c).
+Bits 14/15 (GP14/GP15) are always 0 — those pins are not wired.
 
 ---
 
@@ -160,7 +169,7 @@ For each LED position `row` along the strips, for each of the 24 color bits
 frame[row * 24 + bit] = Σ over columns c:  colorBit(pixel[c][row], bit) << c
 ```
 
-- Autopull threshold 21 ⇒ one word per bit-plane (upper 11 bits unused;
+- Autopull threshold 23 ⇒ one word per bit-plane (upper 9 bits unused;
   simpler than tight packing, bandwidth is a non-issue).
 - Buffer size: `matrixRows × 24 × 4` = 75 × 24 × 4 = **7200 bytes**.
 - DMA transfer count: `matrixRows * 24` words. Everything else in the DMA
@@ -182,7 +191,7 @@ irrelevant at 30–60 fps. If it ever matters, a 256-entry LUT per byte
    `pico_generate_pio_header` in `CMakeLists.txt`.
 2. `app.hpp` config block:
    - `matrixRows = 75`, `matrixCols = 21`
-   - replace `ledDataPin` with `ledPinBase = 0` (base of the 21-pin run)
+   - replace `ledDataPin` with `ledPinBase = 0` (base of the 23-pin run)
    - drop `activeColumn` (all columns are driven every frame now)
 3. `app.cpp`:
    - SM init: parallel variant (§3). Optionally select single-lane vs.
