@@ -83,6 +83,48 @@ void setup_routes(ApiServer& server) {
     });
 }
 
+// ---- Rainbow scroll animation --------------------------------------------------
+
+constexpr float rainbowCyclesPerSec = 0.25f; // one full hue cycle scrolls by every 4 s
+constexpr uint8_t brightness = 128;          // 0..255, 128 = 50%
+
+// Accumulated hue offset in 1/256 hue units; wraps at 256.
+static float huePhase = 0.0f;
+
+// Fast full-saturation HSV->RGB ("color wheel"): pos 0..255 sweeps R->G->B->R.
+static Pixel wheel(uint8_t pos) {
+    pos = 255 - pos;
+    Pixel p;
+    if (pos < 85) {
+        p = {static_cast<uint8_t>(255 - pos * 3), static_cast<uint8_t>(pos * 3), 0};
+    } else if (pos < 170) {
+        pos -= 85;
+        p = {0, static_cast<uint8_t>(255 - pos * 3), static_cast<uint8_t>(pos * 3)};
+    } else {
+        pos -= 170;
+        p = {static_cast<uint8_t>(pos * 3), 0, static_cast<uint8_t>(255 - pos * 3)};
+    }
+    // Scale to the target brightness (keeps the hue, halves the intensity).
+    p.r = (p.r * brightness) >> 8;
+    p.g = (p.g * brightness) >> 8;
+    p.b = (p.b * brightness) >> 8;
+    return p;
+}
+
+// Advances the rainbow by dt seconds and writes the new frame into the matrix.
+// The phase is delta-time driven, so the scroll speed is frame-rate independent.
+static void animate_rainbow(float dt) {
+    huePhase += rainbowCyclesPerSec * dt * 256.0f;
+    if (huePhase >= 256.0f) {
+        huePhase -= 256.0f;
+    }
+
+    for (uint i = 0; i < matrixRows; ++i) {
+        uint8_t hue = static_cast<uint8_t>(i * 256 / matrixRows + huePhase);
+        sharedData.matrix.columns[activeColumn].pixels[i] = wheel(hue);
+    }
+}
+
 int main() {
     if (init_hardware() != 0) {
         printf("Hardware initialization failed\n");
@@ -98,26 +140,30 @@ int main() {
     auto mdns = MdnsServer(hostname, "ledfal");
     printf("mDNS responder started with hostname: %s.local\n", hostname);
 
-    // Fill the matrix with a gradient by index
-    for (uint8_t col = 0; col < matrixCols; ++col) {
-        for (uint8_t row = 0; row < matrixRows; ++row) {
-            sharedData.matrix.columns[col].pixels[row] = {
-                static_cast<uint8_t>(matrixCols > 1 ? col * 255 / (matrixCols - 1) : 0),
-                static_cast<uint8_t>(row * 255 / (matrixRows - 1)),
-                0};
-        }
-    }
+    uint64_t lastFrameUs = time_us_64();
+    absolute_time_t nextFrame = make_timeout_time_us(frameIntervalUs);
 
     while (true) {
         cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, sharedData.ledState);
 
+        uint64_t nowUs = time_us_64();
+        float dt = (nowUs - lastFrameUs) / 1e6f;
+        lastFrameUs = nowUs;
+
         {
-            // Snapshot only; the lwIP lock must not be held while waiting
-            // for the frame to clock out (~5 ms).
+            // Animation + snapshot are both fast (us-scale); the lwIP lock must
+            // NOT be held while waiting for the frame to clock out (~5 ms).
             LwipGuard guard{};
+            animate_rainbow(dt);
             led_load_column(sharedData.matrix.columns[activeColumn].pixels.data());
         }
         led_flush_frame();
+
+        // Pace to 60 fps against the 1 MHz hardware timer. Fixed increments
+        // of nextFrame avoid drift; if a frame ever overruns, sleep_until
+        // returns immediately and we simply run late rather than skip.
+        sleep_until(nextFrame);
+        nextFrame = delayed_by_us(nextFrame, frameIntervalUs);
     }
 
     return 0;

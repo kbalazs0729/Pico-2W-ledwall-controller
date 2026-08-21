@@ -30,6 +30,11 @@ constexpr uint8_t activeColumn = 0;
 // 400 us also covers the final word still shifting out of the OSR (~30 us).
 constexpr uint32_t latchTimeUs = 400;
 
+// Frame pacing for the main loop (60 fps). One frame flush takes
+// matrixRows * 24 * 1.25 us + latchTimeUs (~5.4 ms at 165 LEDs), so 16.6 ms
+// leaves plenty of CPU slack for Wi-Fi and animations.
+constexpr uint32_t frameIntervalUs = 1'000'000 / 60;
+
 // ---- Public interface ----------------------------------------------------------
 
 // Sets up stdio, Wi-Fi, PIO state machine and DMA channel.

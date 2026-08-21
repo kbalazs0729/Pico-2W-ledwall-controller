@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.13)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-set(PICO_BOARD pico_w CACHE STRING "Board target")
+# Konrad:
+#set(PICO_BOARD pico_w CACHE STRING "Board target")
+# Balazs:
+set(PICO_BOARD pico2_w CACHE STRING "Board target")
+
 
 include(pico_sdk_import.cmake)
 
