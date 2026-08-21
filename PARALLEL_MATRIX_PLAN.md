@@ -44,6 +44,34 @@ GP0 → col 0, GP1 → col 1, … GP20 → col 20
 - 330 Ω series resistor per data lane, close to the first LED.
 - **Common ground** between Pico, bus ICs, and the 12 V supply.
   21 data lanes with floating ground = random corruption.
+- Tie the unused 8th input of each bus IC to GND (floating CMOS inputs can
+  oscillate). GP14/GP15 could be routed through the spare channels as spare
+  lanes for future expansion.
+
+### Alternative pin grouping: 2 runs × 2 SMs (chosen for PCB layout)
+
+The 21 lanes are split into two consecutive runs, one per bus-IC group:
+
+| Run | Pins | Lanes | SM program |
+|-----|------|-------|------------|
+| A | GP0 – GP13 | 14 | `out x, 14` |
+| B | GP16 – GP22 | 7 | `out x, 7` |
+
+(GP14/GP15 are skipped; CYW43/ADC pins remain untouched.)
+
+Consequences vs. a single 21-pin run:
+
+- **2 state machines + 2 DMA channels** (RP2350 has 12 SMs — plenty).
+  The `out` bit count is baked into the instruction, so the program is
+  listed twice, identical except for `out x, 14` / `out x, 7`.
+- The transpose splits each 21-bit plane word into two buffers:
+  `planeA = plane & 0x3FFF`, `planeB = (plane >> 14) & 0x7F`.
+- **Lanes do not need to be synchronized** — each strip is self-clocked and
+  latches on its own gap. Still start both SMs together with
+  `pio_enable_sm_mask_in_sync` to keep frames aligned.
+- Frame end: wait for **both** DMA channels and **both** TX FIFOs to drain,
+  then one shared 400 µs latch gap.
+- Frame time is unchanged: 75 × 24 × 1.25 µs ≈ 2.25 ms.
 
 ### Pico 2 W (RP2350) port notes
 
