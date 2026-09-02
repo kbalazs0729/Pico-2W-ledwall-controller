@@ -16,11 +16,11 @@
 //             the length of one DMA frame (one 32-bit GRB word per LED).
 // matrixCols: number of column strips, each with its own data line.
 //             (The old test panel is a single strip -> matrixCols = 1.)
-constexpr uint8_t matrixRows = 165;
+constexpr uint8_t matrixRows = 60;
 constexpr uint8_t matrixCols = 1;
 
 // GPIO wired to the data-in of the first LED of the driven column strip.
-constexpr uint ledDataPin = 28;
+constexpr uint ledDataPin = 13;
 
 // Column strip driven while testing single-column output.
 constexpr uint8_t activeColumn = 0;

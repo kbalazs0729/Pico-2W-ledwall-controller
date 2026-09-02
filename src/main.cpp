@@ -85,8 +85,8 @@ void setup_routes(ApiServer& server) {
 
 // ---- Rainbow scroll animation --------------------------------------------------
 
-constexpr float rainbowCyclesPerSec = 0.25f; // one full hue cycle scrolls by every 4 s
-constexpr uint8_t brightness = 128;          // 0..255, 128 = 50%
+constexpr float rainbowCyclesPerSec = 2.0f; // one full hue cycle scrolls by every 4 s
+constexpr uint8_t brightness = 255;          // 0..255, 128 = 50%
 
 // Accumulated hue offset in 1/256 hue units; wraps at 256.
 static float huePhase = 0.0f;

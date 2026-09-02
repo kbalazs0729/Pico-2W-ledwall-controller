@@ -2,6 +2,11 @@
 
 #include <stdio.h>
 
+/* Konrad
+#define WIFI_SSID "REDACTED-SSID"
+#define WIFI_PASSWORD "REDACTED-PASSWORD"
+*/
+// Balazs
 #define WIFI_SSID "REDACTED-SSID"
 #define WIFI_PASSWORD "REDACTED-PASSWORD"
 
