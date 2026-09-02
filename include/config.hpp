@@ -22,7 +22,7 @@ constexpr int httpPort = 80;
 
 // LEDs per daisy-chained column strip. Also the DMA frame length per bus
 // (one 32-bit bit-plane word per LED per color bit).
-constexpr uint8_t matrixRows = 60;
+constexpr uint8_t matrixRows = 15;
 
 // ---- Buses -----------------------------------------------------------------------
 
@@ -88,7 +88,7 @@ constexpr float wsBitRate = 800000.0f;
 constexpr uint32_t latchTimeUs = 400;
 
 // Frame pacing for the main loop (60 fps). One frame flush takes
-// matrixRows * 24 * 1.25 us + latchTimeUs (e.g. ~2.2 ms at 60 LEDs),
+// matrixRows * 24 * 1.25 us + latchTimeUs (e.g. ~0.85 ms at 15 LEDs),
 // so 16.6 ms leaves plenty of CPU slack for Wi-Fi and animations.
 constexpr uint32_t frameIntervalUs = 1'000'000 / 60;
 

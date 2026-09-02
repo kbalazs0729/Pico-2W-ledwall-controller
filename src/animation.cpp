@@ -1,5 +1,7 @@
 #include "animation.hpp"
 
+#include "generated/badapple_video.hpp"
+
 #include <cmath>
 
 namespace {
@@ -39,7 +41,7 @@ public:
         for (uint32_t col = 0; col < matrixCols; ++col) {
             for (uint32_t row = 0; row < matrixRows; ++row) {
                 uint32_t index = col * matrixRows + row;
-                uint8_t hue = static_cast<uint8_t>(index * 256 / (matrixCols * matrixRows) + m_huePhase);
+                uint8_t hue = static_cast<uint8_t>(index * 256.0f / (matrixCols * matrixRows) + m_huePhase);
                 matrix.columns[col].pixels[row] = wheel(hue);
             }
         }
@@ -49,11 +51,49 @@ private:
     float m_huePhase = 0.0f; // accumulated hue offset in 1/256 hue units
 };
 
+// Plays the 1-bit video baked into flash (include/generated/badapple_video.hpp)
+// in a loop. Frames advance at the video's own fps (accumulated delta time),
+// independent of the display frame rate. Bit packing: pixel i = col*rows+row,
+// byte i/8, bit 7-(i%8) — mirrors make_badapple.py.
+class BadApple final : public Animation {
+public:
+    void step(float dt, LedData<matrixRows, matrixCols>& matrix) override {
+        static_assert(badapple::width == matrixCols && badapple::height == matrixRows,
+                      "badapple_video.hpp was generated for a different matrix size; "
+                      "re-run make_badapple.py with the current --width/--height");
+
+        m_accumSec += dt;
+        constexpr float frameSec = 1.0f / badapple::fps;
+        while (m_accumSec >= frameSec) {
+            m_accumSec -= frameSec;
+            m_frame = (m_frame + 1) % badapple::frameCount;
+        }
+
+        const uint8_t* frame = badapple_video + m_frame * badapple::frameBytes;
+        constexpr uint8_t white = (255 * brightness) >> 8;
+        for (uint32_t col = 0; col < matrixCols; ++col) {
+            for (uint32_t row = 0; row < matrixRows; ++row) {
+                uint32_t i = col * matrixRows + row;
+                bool on = frame[i / 8] & (1u << (7 - (i % 8)));
+                matrix.columns[col].pixels[row] = on ? Pixel{white, white, white}
+                                                     : Pixel{0, 0, 0};
+            }
+        }
+    }
+
+private:
+    float m_accumSec = 0.0f;    // time accumulated towards the next video frame
+    uint32_t m_frame = 0;
+};
+
 } // namespace
 
 std::unique_ptr<Animation> make_animation(AnimationType type) {
     switch (type) {
+        case AnimationType::BadApple:
+            return std::make_unique<BadApple>();
         case AnimationType::Rainbow:
+        case AnimationType::Count:
         default:
             return std::make_unique<Rainbow>();
     }

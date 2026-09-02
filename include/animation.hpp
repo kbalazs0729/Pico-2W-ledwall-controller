@@ -7,9 +7,11 @@
 
 // Animation types, resolved to driver objects by make_animation().
 // To add an animation: enum entry here + a driver class + factory case in
-// animation.cpp.
+// animation.cpp. Count must stay last; endpoints validate against it.
 enum class AnimationType : uint8_t {
     Rainbow,
+    BadApple,
+    Count
 };
 
 // An Animation owns its own state and advances one frame per step() call.

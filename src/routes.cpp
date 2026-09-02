@@ -24,6 +24,7 @@ void Routes::registerEndpoints(ApiServer& server) {
             "           <li>/matrix - GET: Return the current LED matrix data in base64 format.</li>"
             "           <li>/matrix - POST: Accept base64 encoded LED matrix data, show it (switches to manual mode).</li>"
             "           <li>/animate - GET: Switch back to the procedural animation.</li>"
+            "           <li>/animation - POST: Select animation by integer id (0 = Rainbow, 1 = BadApple).</li>"
             "       </ul>"
             "   </body>"
             "</html>";
@@ -41,6 +42,21 @@ void Routes::registerEndpoints(ApiServer& server) {
         LwipGuard guard{};
         m_shared.mode = DisplayMode::Animation;
         return {200, "text/plain", "Animation mode"};
+    });
+
+    server.add_endpoint("/animation", Method::POST, [this](std::string_view body) -> Response {
+        LwipGuard guard{};
+        // Body is a plain integer: the AnimationType id (0 = Rainbow,
+        // 1 = BadApple, ...). The frontend owns the id->name mapping.
+        std::string text(body);
+        char* end = nullptr;
+        unsigned long id = std::strtoul(text.c_str(), &end, 10);
+        if (end == text.c_str() || id >= static_cast<unsigned long>(AnimationType::Count)) {
+            return {400, "text/plain", "Unknown animation id"};
+        }
+        m_shared.animationType = static_cast<AnimationType>(id);
+        m_shared.mode = DisplayMode::Animation;
+        return {200, "text/plain", "Animation selected"};
     });
 
     server.add_endpoint("/matrix", Method::GET, [this](std::string_view) -> Response {
