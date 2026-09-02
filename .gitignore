@@ -2,3 +2,4 @@ build/
 helpers/__pycache__/
 compile_commands.json
 include/secrets.hpp
+helpers/bad_apple/preview_*.mp4

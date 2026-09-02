@@ -43,6 +43,10 @@ def parse_args():
                    help="grayscale threshold 0..255; above -> white (default 127)")
     p.add_argument("--out", default=os.path.join(REPO_ROOT, "include", "generated", "badapple_video.hpp"),
                    help="generated header path")
+    p.add_argument("--preview", metavar="PREFIX",
+                   help="also write watchable preview videos: PREFIX_gray.mp4 "
+                        "(resized) and PREFIX_bw.mp4 (after threshold, i.e. exactly "
+                        "what the LEDs will show), upscaled 20x with nearest neighbor")
     return p.parse_args()
 
 
@@ -56,8 +60,26 @@ def extract_gray_frames(args):
     return subprocess.run(cmd, check=True, capture_output=True).stdout
 
 
+def make_previews(args):
+    """Render the intermediate pipeline stages as watchable videos."""
+    scale_down = f"fps={args.fps},scale={args.width}:{args.height}:flags=lanczos,format=gray"
+    upscale = f"scale={args.width * 20}:{args.height * 20}:flags=neighbor"
+    threshold = f"lut=y='if(gt(val,{args.threshold}),255,0)'"
+
+    for name, vf in [("gray", f"{scale_down},{upscale}"),
+                     ("bw", f"{scale_down},{threshold},{upscale}")]:
+        out = f"{args.preview}_{name}.mp4"
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", args.input,
+                        "-vf", vf, "-pix_fmt", "yuv420p", out], check=True)
+        print(f"preview:     {out}")
+
+
 def pack_frames(raw, args):
-    """Threshold and bit-pack; returns (bytes of the whole dump, frame_count)."""
+    """Threshold and bit-pack; returns (dump bytes, frame_count, frame_bytes).
+
+    ffmpeg emits frames ROW-major (i = y * width + x); the firmware expects
+    COLUMN-major bits (i = col * height + row), so remap while packing.
+    """
     pixels_per_frame = args.width * args.height
     frame_count = len(raw) // pixels_per_frame
     if frame_count == 0:
@@ -68,9 +90,11 @@ def pack_frames(raw, args):
     for f in range(frame_count):
         frame = raw[f * pixels_per_frame:(f + 1) * pixels_per_frame]
         packed = bytearray(frame_bytes)
-        for i, gray in enumerate(frame):
-            if gray > args.threshold:
-                packed[i // 8] |= 1 << (7 - (i % 8))
+        for y in range(args.height):
+            for x in range(args.width):
+                if frame[y * args.width + x] > args.threshold:
+                    i = x * args.height + y
+                    packed[i // 8] |= 1 << (7 - (i % 8))
         dump += packed
     return bytes(dump), frame_count, frame_bytes
 
@@ -112,6 +136,8 @@ def main():
     raw = extract_gray_frames(args)
     dump, frame_count, frame_bytes = pack_frames(raw, args)
     generate_header(dump, frame_count, frame_bytes, args)
+    if args.preview:
+        make_previews(args)
 
     seconds = frame_count / args.fps
     print(f"frames:      {frame_count} ({seconds:.1f} s @ {args.fps} fps)")

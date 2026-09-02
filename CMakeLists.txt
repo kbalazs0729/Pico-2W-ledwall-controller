@@ -2,10 +2,11 @@ cmake_minimum_required(VERSION 3.13)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Konrad:
-#set(PICO_BOARD pico_w CACHE STRING "Board target")
+set(PICO_BOARD pico_w CACHE STRING "Board target")
+set(PICO_PLATFORM "rp2040" CACHE STRING "Pico platform")
 # Balazs:
-set(PICO_BOARD pico2_w CACHE STRING "Board target")
-set(PICO_PLATFORM "rp2350-arm-s" CACHE STRING "Pico platform")
+#set(PICO_BOARD pico2_w CACHE STRING "Board target")
+#set(PICO_PLATFORM "rp2350-arm-s" CACHE STRING "Pico platform")
 
 include(pico_sdk_import.cmake)
 
