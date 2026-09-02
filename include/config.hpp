@@ -22,7 +22,7 @@ constexpr int httpPort = 80;
 
 // LEDs per daisy-chained column strip. Also the DMA frame length per bus
 // (one 32-bit bit-plane word per LED per color bit).
-constexpr uint8_t matrixRows = 15;
+constexpr uint8_t matrixRows = 70;
 
 // ---- Buses -----------------------------------------------------------------------
 
@@ -40,10 +40,10 @@ struct BusConfig {
 };
 
 constexpr BusConfig buses[] = {
-    {0, 4},
+    // {0, 4},
     // Final wall:
-    // {0, 14},
-    // {16, 7},
+    {0, 14},
+    {16, 7},
 };
 constexpr std::size_t busCount = std::size(buses);
 

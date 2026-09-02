@@ -24,7 +24,14 @@ add_executable(${PROJECT_NAME}
     src/mdns.cpp
     src/routes.cpp
     src/main.cpp
+    include/generated/badapple_video.S
 )
+
+# .incbin embeds badapple.bin at ASSEMBLY time; the build system can't see
+# that dependency on its own, so re-assemble whenever the .bin is regenerated.
+set_property(SOURCE include/generated/badapple_video.S
+    APPEND PROPERTY OBJECT_DEPENDS
+    ${CMAKE_CURRENT_LIST_DIR}/include/generated/badapple.bin)
 
 pico_enable_stdio_usb(${PROJECT_NAME} 1)
 pico_enable_stdio_uart(${PROJECT_NAME} 0)
