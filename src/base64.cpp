@@ -1,11 +1,15 @@
 #include "base64.hpp"
 
-void toBase64(uint8_t* data, std::size_t length, std::string& dest) {
+#include <cstring>
+
+static const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+void toBase64(const uint8_t* data, std::size_t length, std::string& dest) {
     std::string encoded;
     encoded.reserve(((length + 2) / 3) * 4);
 
     for (std::size_t i = 0; i < length; i += 3) {
-        uint32_t octet_a = i < length ? data[i] : 0;
+        uint32_t octet_a = data[i];
         uint32_t octet_b = (i + 1) < length ? data[i + 1] : 0;
         uint32_t octet_c = (i + 2) < length ? data[i + 2] : 0;
 

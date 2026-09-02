@@ -9,5 +9,4 @@
 class MdnsServer {
 public:
     MdnsServer(const char* hostname, const char* deviceName);
-    ~MdnsServer();
 };

@@ -36,7 +36,11 @@ int init_hardware() {
 
     s_dmaChan = dma_claim_unused_channel(true);
 
-    uint offset = pio_add_program(s_pio, &ws2812_program);
+    int offset = pio_add_program(s_pio, &ws2812_program);
+    if (offset < 0) {
+        printf("Failed to load PIO program (no instruction memory)\n");
+        return -1;
+    }
     s_sm = pio_claim_unused_sm(s_pio, true);
 
     pio_sm_config c = ws2812_program_get_default_config(offset);

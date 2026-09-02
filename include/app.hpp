@@ -31,8 +31,8 @@ constexpr uint8_t activeColumn = 0;
 constexpr uint32_t latchTimeUs = 400;
 
 // Frame pacing for the main loop (60 fps). One frame flush takes
-// matrixRows * 24 * 1.25 us + latchTimeUs (~5.4 ms at 165 LEDs), so 16.6 ms
-// leaves plenty of CPU slack for Wi-Fi and animations.
+// matrixRows * 24 * 1.25 us + latchTimeUs (e.g. ~2.2 ms at 60 LEDs,
+// ~5.4 ms at 165), so 16.6 ms leaves plenty of CPU slack for Wi-Fi.
 constexpr uint32_t frameIntervalUs = 1'000'000 / 60;
 
 // ---- Public interface ----------------------------------------------------------
@@ -46,6 +46,6 @@ int init_hardware();
 void led_load_column(const Pixel* pixels);
 
 // Streams the frame buffer to the LED strip via DMA + PIO and blocks until
-// the frame (including the latch gap) is complete. Takes ~5 ms; call WITHOUT
-// holding the lwIP lock.
+// the frame (including the latch gap) is complete. Takes
+// matrixRows * 24 * 1.25 us + latchTimeUs; call WITHOUT holding the lwIP lock.
 void led_flush_frame();

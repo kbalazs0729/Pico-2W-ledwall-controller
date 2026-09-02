@@ -9,6 +9,17 @@
 #include <cstring>
 #include <string>
 
+static const char* reason_phrase(int status) {
+    switch (status) {
+        case 200: return "OK";
+        case 400: return "Bad Request";
+        case 404: return "Not Found";
+        case 405: return "Method Not Allowed";
+        case 500: return "Internal Server Error";
+        default:  return "Status";
+    }
+}
+
 ApiServer::ApiServer(int port) {
     this->m_port = port;
 
@@ -16,9 +27,9 @@ ApiServer::ApiServer(int port) {
     cyw43_arch_lwip_begin();
 
     // We create a new TCP PCB (Protocol Control Block) for our server
-    // that is listening on any IP address (IPADDR_ANY)
+    // that is listening on any IP address
     printf("[api] ctor: creating pcb\n");
-    this->m_server_pcb = tcp_new_ip_type(IPADDR_ANY);
+    this->m_server_pcb = tcp_new_ip_type(IPADDR_TYPE_ANY);
     if (this->m_server_pcb == nullptr) {
         // Handle error: unable to create PCB
         cyw43_arch_lwip_end();
@@ -28,14 +39,25 @@ ApiServer::ApiServer(int port) {
 
     // We bind the PCB to the specified port
     if (tcp_bind(this->m_server_pcb, IP_ANY_TYPE, this->m_port) != ERR_OK) {
-        // Handle error: unable to bind PCB
+        // Handle error: unable to bind PCB; close the pcb so it isn't leaked
+        tcp_close(this->m_server_pcb);
+        this->m_server_pcb = nullptr;
         cyw43_arch_lwip_end();
         printf("Error: Unable to bind TCP PCB to port %d\n", this->m_port);
         return;
     }
 
-    // We set the PCB to listen for incoming connections
-    this->m_server_pcb = tcp_listen(this->m_server_pcb);
+    // We set the PCB to listen for incoming connections. tcp_listen returns
+    // a NEW pcb (or NULL on memory exhaustion, leaking the original).
+    tcp_pcb* listen_pcb = tcp_listen(this->m_server_pcb);
+    if (listen_pcb == nullptr) {
+        tcp_close(this->m_server_pcb);
+        this->m_server_pcb = nullptr;
+        cyw43_arch_lwip_end();
+        printf("Error: tcp_listen failed (out of memory)\n");
+        return;
+    }
+    this->m_server_pcb = listen_pcb;
     printf("[api] ctor: listening on port %d (pcb %p)\n", this->m_port, (void*)this->m_server_pcb);
     tcp_arg(this->m_server_pcb, this);
     tcp_accept(this->m_server_pcb, on_accept);
@@ -103,6 +125,9 @@ err_t ApiServer::on_recv(void* arg, tcp_pcb* tpcb, pbuf* p, err_t err) {
     // Handle the received data
     if (err == ERR_OK) {
         state->server->handle_recv(tpcb, p, *state);
+    } else {
+        // Receive error: drop the connection rather than leaving it dangling.
+        ApiServer::close_connection(tpcb, state);
     }
 
     // Free the pbuf after processing
@@ -120,7 +145,9 @@ err_t ApiServer::on_sent(void* arg, tcp_pcb* tpcb, u16_t len) {
            (void*)tpcb, len, state->tx_offset, state->tx.size());
 
     if (state->tx_offset < state->tx.size()) {
-        state->server->pump_tx(tpcb, *state);
+        if (!state->server->pump_tx(tpcb, *state)) {
+            return ERR_OK; // connection was closed, state is gone
+        }
     }
 
     if (state->tx_offset >= state->tx.size()) {
@@ -161,6 +188,11 @@ err_t ApiServer::handle_recv(tcp_pcb* tpcb, pbuf* p, ConnectionState& state) {
     // (reset) instead of a FIN and the client would see an empty response.
     tcp_recved(tpcb, p->tot_len);
 
+    // Hard caps against memory-exhaustion: the largest legitimate request is
+    // a POST /matrix (~7 KB); anything beyond this is an error or an attack.
+    constexpr std::size_t kMaxHeaderBytes = 4096;
+    constexpr std::size_t kMaxBodyBytes = 16384;
+
     // Append the whole pbuf chain (tot_len can span multiple pbufs) to the
     // receive buffer. Large requests (e.g. POST /matrix) arrive in several
     // TCP segments, so we must accumulate until the request is complete.
@@ -171,20 +203,34 @@ err_t ApiServer::handle_recv(tcp_pcb* tpcb, pbuf* p, ConnectionState& state) {
     // Wait until the full header has arrived
     auto header_end = state.rx.find("\r\n\r\n");
     if (header_end == std::string::npos) {
+        if (state.rx.size() > kMaxHeaderBytes) {
+            send_response(tpcb, state, 400, "text/plain", "400: Header too large");
+            state.rx.clear();
+        }
         return ERR_OK;
     }
 
-    // Parse Content-Length (case-insensitive) from the header section
+    // Parse Content-Length (case-insensitive) from the header section.
+    // The key is matched at the start of a header line only, so lookalikes
+    // like "X-Content-Length:" don't count.
     std::size_t content_length = 0;
     {
         std::string headers = state.rx.substr(0, header_end);
         for (auto& c : headers) {
             if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
         }
-        constexpr const char* key = "content-length:";
+        constexpr const char* key = "\ncontent-length:";
         auto pos = headers.find(key);
         if (pos != std::string::npos) {
-            content_length = std::strtoul(headers.c_str() + pos + strlen(key), nullptr, 10);
+            const char* value_start = headers.c_str() + pos + strlen(key);
+            char* value_end = nullptr;
+            unsigned long parsed = std::strtoul(value_start, &value_end, 10);
+            if (value_end == value_start || parsed > kMaxBodyBytes) {
+                send_response(tpcb, state, 400, "text/plain", "400: Invalid Content-Length");
+                state.rx.clear();
+                return ERR_OK;
+            }
+            content_length = parsed;
         }
     }
 
@@ -196,13 +242,13 @@ err_t ApiServer::handle_recv(tcp_pcb* tpcb, pbuf* p, ConnectionState& state) {
 
     printf("[api] handle_recv: request complete, %zu bytes (body_offset=%zu, content_length=%zu)\n",
            state.rx.size(), body_offset, content_length);
-    route_request(tpcb, state, body_offset);
+    route_request(tpcb, state, body_offset, content_length);
     state.rx.clear();
 
     return ERR_OK;
 }
 
-void ApiServer::route_request(tcp_pcb* tpcb, ConnectionState& state, std::size_t body_offset) {
+void ApiServer::route_request(tcp_pcb* tpcb, ConnectionState& state, std::size_t body_offset, std::size_t content_length) {
     std::string_view request_view(state.rx);
 
     // Find the end of the request line (the first line of the HTTP request)
@@ -251,8 +297,9 @@ void ApiServer::route_request(tcp_pcb* tpcb, ConnectionState& state, std::size_t
     }
 
     // The body starts right after the header terminator. handle_recv only
-    // calls us once Content-Length bytes are present, so this is complete.
-    std::string_view body = request_view.substr(body_offset);
+    // calls us once Content-Length bytes are present; slice to exactly that
+    // length so trailing bytes can't leak into the handler.
+    std::string_view body = request_view.substr(body_offset, content_length);
 
     printf("[api] route_request: %s %s\n", method == Method::GET ? "GET" : "POST", path.c_str());
 
@@ -271,7 +318,7 @@ void ApiServer::send_response(tcp_pcb* tpcb, ConnectionState& state, int status,
     // state; pump_tx sends it in chunks as send-buffer space allows.
     state.tx.clear();
     state.tx_offset = 0;
-    state.tx += "HTTP/1.1 " + std::to_string(status) + " OK\r\n";
+    state.tx += "HTTP/1.1 " + std::to_string(status) + " " + reason_phrase(status) + "\r\n";
     state.tx += "Content-Type: " + std::string(content_type) + "\r\n";
     state.tx += "Content-Length: " + std::to_string(strlen(body)) + "\r\n";
     state.tx += "Connection: close\r\n";
@@ -282,12 +329,12 @@ void ApiServer::send_response(tcp_pcb* tpcb, ConnectionState& state, int status,
     pump_tx(tpcb, state);
 }
 
-void ApiServer::pump_tx(tcp_pcb* tpcb, ConnectionState& state) {
+bool ApiServer::pump_tx(tcp_pcb* tpcb, ConnectionState& state) {
     while (state.tx_offset < state.tx.size()) {
         // Never queue more than the send buffer can take
         u16_t avail = tcp_sndbuf(tpcb);
         if (avail == 0) {
-            return; // wait for on_sent to free up buffer space
+            return true; // wait for on_sent to free up buffer space
         }
 
         std::size_t remaining = state.tx.size() - state.tx_offset;
@@ -305,6 +352,12 @@ void ApiServer::pump_tx(tcp_pcb* tpcb, ConnectionState& state) {
         if (err != ERR_OK) {
             printf("[api] pump_tx: tcp_write failed: %d (offset=%zu/%zu)\n",
                    err, state.tx_offset, state.tx.size());
+            if (state.tx_offset == 0) {
+                // Nothing is in flight, so on_sent will never fire: the
+                // connection would hang forever. Close it instead.
+                close_connection(tpcb, &state);
+                return false;
+            }
             break;
         }
         printf("[api] pump_tx: wrote %u bytes (offset=%zu/%zu, sndbuf=%u)\n",
@@ -314,4 +367,5 @@ void ApiServer::pump_tx(tcp_pcb* tpcb, ConnectionState& state) {
     }
 
     tcp_output(tpcb);
+    return true;
 }

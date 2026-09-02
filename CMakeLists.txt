@@ -33,9 +33,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR}
 )
 
+target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
+
 target_link_libraries(${PROJECT_NAME}
     pico_stdlib
-    pico_lwip_http
     pico_lwip_mdns
     hardware_clocks
     hardware_pio

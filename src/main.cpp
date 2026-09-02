@@ -5,8 +5,7 @@
 #include "api_server.hpp"
 #include "lwip_guard.hpp"
 
-#include <atomic>
-#include <boards/pico_w.h>
+#include <cmath>
 #include <stdio.h>
 
 struct SharedData {
@@ -18,9 +17,14 @@ SharedData sharedData {
     .ledState = false
 };
 
+// The base64 GET/POST endpoints serialize the matrix with reinterpret_cast +
+// sizeof; guard the packed-layout assumption that makes that well-defined.
+static_assert(sizeof(sharedData.matrix) == matrixRows * matrixCols * 3,
+              "LedData must stay packed: rows * cols * 3 bytes");
+
 void setup_routes(ApiServer& server) {
-    server.add_endpoint("/", Method::GET, [](std::string_view body) -> Response {
-        // Allocated as static const to serve from ROM
+    server.add_endpoint("/", Method::GET, [](std::string_view) -> Response {
+        // static: built once, reused for every request (heap, not ROM)
         static const auto content = std::string(
             "<html>"
             "   <head>"
@@ -42,16 +46,13 @@ void setup_routes(ApiServer& server) {
         return {200, "text/html", content.c_str()};
     });
     
-    server.add_endpoint("/led", Method::GET, [](std::string_view body) -> Response {
-        {
-            LwipGuard guard{};
-            sharedData.ledState = !sharedData.ledState;
-        }
-        
+    server.add_endpoint("/led", Method::GET, [](std::string_view) -> Response {
+        LwipGuard guard{};
+        sharedData.ledState = !sharedData.ledState;
         return {200, "text/plain", sharedData.ledState ? "LED ON" : "LED OFF"};
     });
 
-    server.add_endpoint("/matrix", Method::GET, [](std::string_view body) -> Response {
+    server.add_endpoint("/matrix", Method::GET, [](std::string_view) -> Response {
         // Alloced as a static scratch buffer to avoid reallocation on each request.
         static std::string base64Matrix {};
         {
@@ -76,7 +77,7 @@ void setup_routes(ApiServer& server) {
             if (decodedData.size() != sizeof(sharedData.matrix)) {
                 return {400, "text/plain", "Invalid matrix data size"};
             }
-            std::memcpy(&sharedData.matrix.columns, decodedData.data(), decodedData.size());
+            std::memcpy(&sharedData.matrix, decodedData.data(), decodedData.size());
         }
 
         return {200, "text/plain", "Matrix updated successfully"};
@@ -85,8 +86,8 @@ void setup_routes(ApiServer& server) {
 
 // ---- Rainbow scroll animation --------------------------------------------------
 
-constexpr float rainbowCyclesPerSec = 2.0f; // one full hue cycle scrolls by every 4 s
-constexpr uint8_t brightness = 255;          // 0..255, 128 = 50%
+constexpr float rainbowCyclesPerSec = 2.0f; // two full hue cycles scroll by per second
+constexpr uint8_t brightness = 255;         // 0..255 scale factor (255 ≈ 100%, 128 ≈ 50%)
 
 // Accumulated hue offset in 1/256 hue units; wraps at 256.
 static float huePhase = 0.0f;
@@ -104,7 +105,8 @@ static Pixel wheel(uint8_t pos) {
         pos -= 170;
         p = {static_cast<uint8_t>(pos * 3), 0, static_cast<uint8_t>(255 - pos * 3)};
     }
-    // Scale to the target brightness (keeps the hue, halves the intensity).
+    // Scale to the target brightness (keeps the hue; >>8 means 255 maps to
+    // 254, a standard fast approximation of full scale).
     p.r = (p.r * brightness) >> 8;
     p.g = (p.g * brightness) >> 8;
     p.b = (p.b * brightness) >> 8;
@@ -115,9 +117,9 @@ static Pixel wheel(uint8_t pos) {
 // The phase is delta-time driven, so the scroll speed is frame-rate independent.
 static void animate_rainbow(float dt) {
     huePhase += rainbowCyclesPerSec * dt * 256.0f;
-    if (huePhase >= 256.0f) {
-        huePhase -= 256.0f;
-    }
+    // fmodf (not a single subtract): a long stall must not leave the phase
+    // denormalized for several frames.
+    huePhase = std::fmodf(huePhase, 256.0f);
 
     for (uint i = 0; i < matrixRows; ++i) {
         uint8_t hue = static_cast<uint8_t>(i * 256 / matrixRows + huePhase);
@@ -137,14 +139,17 @@ int main() {
     printf("HTTP server started on port %d with IP %s\n", port, ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
     const char* hostname = "ledfal";
-    auto mdns = MdnsServer(hostname, "ledfal");
+    [[maybe_unused]] auto mdns = MdnsServer(hostname, "ledfal");
     printf("mDNS responder started with hostname: %s.local\n", hostname);
 
     uint64_t lastFrameUs = time_us_64();
     absolute_time_t nextFrame = make_timeout_time_us(frameIntervalUs);
 
     while (true) {
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, sharedData.ledState);
+        {
+            LwipGuard guard{};
+            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, sharedData.ledState);
+        }
 
         uint64_t nowUs = time_us_64();
         float dt = (nowUs - lastFrameUs) / 1e6f;

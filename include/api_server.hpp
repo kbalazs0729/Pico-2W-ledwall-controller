@@ -26,10 +26,6 @@ struct Endpoint {
         }
         return strcmp(this->path, other.path) < 0;
     }
-
-    bool operator==(const Endpoint& other) const {
-        return this->method == other.method && (strcmp(this->path, other.path) == 0);
-    }
 };
 
 struct Response {
@@ -69,11 +65,13 @@ private:
     static void  on_error(void* arg, err_t err);
 
     err_t handle_recv(tcp_pcb* tpcb, pbuf* p, ConnectionState& state);
-    void route_request(tcp_pcb* tpcb, ConnectionState& state, std::size_t body_offset);
+    void route_request(tcp_pcb* tpcb, ConnectionState& state, std::size_t body_offset, std::size_t content_length);
     void send_response(tcp_pcb* tpcb, ConnectionState& state, int status, const char* content_type, const char* body);
     // Queue as much of the pending response as fits in the send buffer.
     // The rest is sent from on_sent as the client acknowledges data.
-    void pump_tx(tcp_pcb* tpcb, ConnectionState& state);
+    // Returns false if the connection was closed (state freed) — the caller
+    // must not touch the connection state afterwards.
+    bool pump_tx(tcp_pcb* tpcb, ConnectionState& state);
     // Close the connection and free its state. Deregisters all lwIP
     // callbacks first: after tcp_close() the pcb lingers in FIN_WAIT and
     // lwIP would still invoke them with the freed state (use-after-free).
