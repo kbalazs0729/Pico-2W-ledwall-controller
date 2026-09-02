@@ -1,0 +1,27 @@
+;
+; WS2812/WS2815 parallel bus driver.
+;
+; Drives a whole bus of consecutive GPIO lanes at once: every lane gets the
+; same waveform timing while the data comes from the shift register, one bit
+; per lane. The lane count is configured from C (sm_config_set_out_pins) and
+; MOV PINS only asserts that many pins (RP2350 datasheet, PINCTRL.OUT_COUNT),
+; so this single program serves any bus width from 1 to 32 lanes.
+;
+; One WS2812 bit = 10 SM cycles = 1.25 us at an 8 MHz SM clock:
+;   '0' bit: high 3 cycles (375 ns), low 7 cycles (750 ns + the out cycle)
+;   '1' bit: high 6 cycles (750 ns), low 4 cycles (375 ns + the out cycle)
+;
+; Feed format: one 32-bit word per bit-plane; bit c is the data bit for the
+; lane on pin (base + c). 24 planes per LED, GRB order, MSB first. Autopull
+; every 32 bits (one word per plane). When the FIFO runs dry the SM stalls
+; in `out` and the pins keep the low level left by the last `mov pins, null`
+; — that idle-low period is what latches the LEDs.
+
+.program ws2812_bus
+
+.wrap_target
+    out x, 32               ; pull the next bit-plane (one bit per lane)
+    mov pins, !null [2]     ; ALL lanes high for 3 cycles
+    mov pins, x     [2]     ; '0' lanes drop low, '1' lanes stay high, 3 cycles
+    mov pins, null  [2]     ; ALL lanes low for 3 cycles
+.wrap

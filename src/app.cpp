@@ -2,24 +2,17 @@
 
 #include <stdio.h>
 
-/* Konrad
-#define WIFI_SSID "REDACTED-SSID"
-#define WIFI_PASSWORD "REDACTED-PASSWORD"
-*/
-// Balazs
-#define WIFI_SSID "REDACTED-SSID"
-#define WIFI_PASSWORD "REDACTED-PASSWORD"
-
 // ---- LED driving state (file-local) --------------------------------------------
 
 static PIO s_pio = pio0;
-static uint s_sm;
-static int s_dmaChan;
+static uint s_sm[busCount];
+static int s_dmaChan[busCount];
 
-// One column of pixels in on-the-wire format. Kept separate from the matrix so
-// a frame is a consistent snapshot even if an HTTP request updates the matrix
-// mid-frame.
-static uint32_t s_frameBuf[matrixRows];
+// Per-bus frame buffers: one 32-bit bit-plane word per LED per color bit.
+// Bit c of a plane word is the data bit for the lane on pin (pinBase + c).
+// Kept separate from the matrix so a frame is a consistent snapshot even if
+// an HTTP request updates the matrix mid-frame.
+static uint32_t s_frameBuf[busCount][matrixRows * 24];
 
 int init_hardware() {
     stdio_init_all();
@@ -34,65 +27,92 @@ int init_hardware() {
         return -1;
     }
 
-    s_dmaChan = dma_claim_unused_channel(true);
-
-    int offset = pio_add_program(s_pio, &ws2812_program);
+    int offset = pio_add_program(s_pio, &ws2812_bus_program);
     if (offset < 0) {
         printf("Failed to load PIO program (no instruction memory)\n");
         return -1;
     }
-    s_sm = pio_claim_unused_sm(s_pio, true);
 
-    pio_sm_config c = ws2812_program_get_default_config(offset);
+    // The PIO program spends 10 cycles per bit (out + 3 movs with [2] delays).
+    float div = clock_get_hz(clk_sys) / (wsBitRate * 10.0f);
 
-    pio_gpio_init(s_pio, ledDataPin);
-    pio_sm_set_consecutive_pindirs(s_pio, s_sm, ledDataPin, 1, true);
+    uint32_t smMask = 0;
+    for (std::size_t b = 0; b < busCount; ++b) {
+        const BusConfig& bus = buses[b];
+        s_dmaChan[b] = dma_claim_unused_channel(true);
+        s_sm[b] = pio_claim_unused_sm(s_pio, true);
 
-    sm_config_set_sideset_pins(&c, ledDataPin);
-    // Shift left (MSB first), autopull a fresh word every 24 bits.
-    sm_config_set_out_shift(&c, false, true, 24);
-    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+        pio_sm_config c = ws2812_bus_program_get_default_config(offset);
 
-    // The PIO program spends (T1 + T2 + T3) cycles per bit; WS2812 wants 800 kbit/s.
-    float div = clock_get_hz(clk_sys) / (800000.0f * (ws2812_T1 + ws2812_T2 + ws2812_T3));
-    sm_config_set_clkdiv(&c, div);
+        for (uint i = 0; i < bus.lanes; ++i) {
+            pio_gpio_init(s_pio, bus.pinBase + i);
+        }
+        pio_sm_set_consecutive_pindirs(s_pio, s_sm[b], bus.pinBase, bus.lanes, true);
 
-    pio_sm_init(s_pio, s_sm, offset, &c);
-    pio_sm_set_enabled(s_pio, s_sm, true);
+        // MOV PINS asserts exactly this many pins from the base pin.
+        sm_config_set_out_pins(&c, bus.pinBase, bus.lanes);
+        // Shift right (lane bit c -> pin base+c), autopull one word per plane.
+        sm_config_set_out_shift(&c, true, true, 32);
+        sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+        sm_config_set_clkdiv(&c, div);
+
+        pio_sm_init(s_pio, s_sm[b], offset, &c);
+        smMask |= 1u << s_sm[b];
+    }
+
+    // Start all buses on the same clock edge so frames stay aligned.
+    pio_enable_sm_mask_in_sync(s_pio, smMask);
 
     return 0;
 }
 
-void led_load_column(const Pixel* pixels) {
-    for (uint i = 0; i < matrixRows; ++i) {
-        // WS2812 wire order is GRB (not RGB), MSB first; autopull every 24 bits
-        // means the 24-bit value must be left-justified in the 32-bit word.
-        s_frameBuf[i] = (uint32_t)pixels[i].g << 24
-                      | (uint32_t)pixels[i].r << 16
-                      | (uint32_t)pixels[i].b << 8;
+void led_load_frame(const Pixel* pixelsColMajor) {
+    for (uint row = 0; row < matrixRows; ++row) {
+        for (uint bit = 0; bit < 24; ++bit) {
+            // Gather one bit-plane across all columns. Wire order is GRB,
+            // MSB first (bit 0..7 = green, 8..15 = red, 16..23 = blue).
+            uint32_t plane = 0;
+            for (uint col = 0; col < matrixCols; ++col) {
+                const Pixel& p = pixelsColMajor[col * matrixRows + row];
+                uint8_t channel = bit < 8 ? p.g : (bit < 16 ? p.r : p.b);
+                plane |= ((channel >> (7 - (bit & 7))) & 1u) << col;
+            }
+            // Distribute the plane over the buses, in bus order.
+            uint8_t planeOffset = 0;
+            for (std::size_t b = 0; b < busCount; ++b) {
+                uint8_t lanes = buses[b].lanes;
+                uint32_t mask = lanes >= 32 ? 0xFFFFFFFFu : ((1u << lanes) - 1u);
+                s_frameBuf[b][row * 24 + bit] = (plane >> planeOffset) & mask;
+                planeOffset += lanes;
+            }
+        }
     }
 }
 
 void led_flush_frame() {
-    // The DMA engine feeds the state machine's TX FIFO at exactly the rate the
-    // SM drains it (DREQ pacing), so no CPU involvement is needed per word.
-    dma_channel_config c = dma_channel_get_default_config(s_dmaChan);
-    channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
-    channel_config_set_read_increment(&c, true);   // walk through the buffer
-    channel_config_set_write_increment(&c, false); // always the same FIFO
-    channel_config_set_dreq(&c, pio_get_dreq(s_pio, s_sm, true));
+    // Kick off one DMA transfer per bus, each paced by its state machine's
+    // "TX FIFO has space" request line (DREQ) — no CPU work per word.
+    for (std::size_t b = 0; b < busCount; ++b) {
+        dma_channel_config c = dma_channel_get_default_config(s_dmaChan[b]);
+        channel_config_set_transfer_data_size(&c, DMA_SIZE_32);
+        channel_config_set_read_increment(&c, true);   // walk through the buffer
+        channel_config_set_write_increment(&c, false); // always the same FIFO
+        channel_config_set_dreq(&c, pio_get_dreq(s_pio, s_sm[b], true));
 
-    dma_channel_configure(s_dmaChan, &c,
-        &s_pio->txf[s_sm], // dst: state machine TX FIFO
-        s_frameBuf,        // src: pixel words
-        matrixRows,
-        true);             // start immediately
-
-    // Wait for the DMA to finish, then for the TX FIFO to drain...
-    dma_channel_wait_for_finish_blocking(s_dmaChan);
-    while (!pio_sm_is_tx_fifo_empty(s_pio, s_sm)) {
-        tight_loop_contents();
+        dma_channel_configure(s_dmaChan[b], &c,
+            &s_pio->txf[s_sm[b]], // dst: state machine TX FIFO
+            s_frameBuf[b],        // src: bit-plane words
+            matrixRows * 24,
+            true);                // start immediately
     }
-    // ...then hold the line low so the strip latches the frame.
+
+    // Wait for every bus: DMA done, then TX FIFO drained...
+    for (std::size_t b = 0; b < busCount; ++b) {
+        dma_channel_wait_for_finish_blocking(s_dmaChan[b]);
+        while (!pio_sm_is_tx_fifo_empty(s_pio, s_sm[b])) {
+            tight_loop_contents();
+        }
+    }
+    // ...then hold the lines low so all strips latch the frame together.
     sleep_us(latchTimeUs);
 }

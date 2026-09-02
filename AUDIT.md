@@ -103,15 +103,17 @@ bus refactor.
 
 ---
 
-## 3. Asked the user
+## 3. Asked the user — RESOLVED
 
-1. **Wi-Fi credentials committed to git** (`src/app.cpp`) — move to a
-   gitignored header or keep tracked?
-2. **POST /matrix is dead** while the animation overwrites the matrix every
-   frame — add an animation/manual mode toggle now, or leave until the
-   animation-mode enum lands (PARALLEL_MATRIX_PLAN.md §6)?
-3. **Button pins**: GP14/15 or GP15/16? The "14+7" bus layout implies
-   buttons on GP14/15 (buses GP0–13 + GP16–22).
+1. **Wi-Fi credentials committed to git** → moved to gitignored
+   `include/secrets.hpp` (template: `secrets.hpp.example`); git history
+   rewritten to purge both networks' creds.
+2. **POST /matrix is dead** → mode toggle added: `DisplayMode {Animation,
+   Manual}` in `SharedData`; POST /matrix switches to Manual,
+   `GET /animate` switches back.
+3. **Button pins** → confirmed **GP14 / GP15**; final layout stays
+   bus A = GP0–13 (14 lanes) + bus B = GP16–22 (7 lanes), reserved as
+   `buttonPinA/buttonPinB` in `config.hpp`.
 
 ## 4. Deliberately not fixed (rationale)
 

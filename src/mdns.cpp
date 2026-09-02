@@ -6,7 +6,7 @@ static void srv_txt(struct mdns_service *service, void * /*txt_userdata*/) {
     mdns_resp_add_service_txtitem(service, "path=/", 6);
 }
 
-MdnsServer::MdnsServer(const char* hostname, const char* deviceName) {
+MdnsServer::MdnsServer(const char* hostname, const char* deviceName, uint16_t port) {
     printf("Initializing mDNS responder...\n");
 
     // mdns_resp_* are lwIP core APIs; lwIP runs concurrently in IRQ context,
@@ -26,7 +26,7 @@ MdnsServer::MdnsServer(const char* hostname, const char* deviceName) {
     if (slot >= 0) {
         // 3. Optional: Advertise services (e.g., exposing an HTTP Server)
         err_t err = mdns_resp_add_service(net_interface, deviceName, "_http",
-                                          DNSSD_PROTO_TCP, 80, srv_txt, NULL);
+                                          DNSSD_PROTO_TCP, port, srv_txt, NULL);
         if (err != ERR_OK) {
             printf("Failed to advertise mDNS service (err %d).\n", err);
         }

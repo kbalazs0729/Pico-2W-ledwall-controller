@@ -8,5 +8,5 @@
 
 class MdnsServer {
 public:
-    MdnsServer(const char* hostname, const char* deviceName);
+    MdnsServer(const char* hostname, const char* deviceName, uint16_t port = 80);
 };

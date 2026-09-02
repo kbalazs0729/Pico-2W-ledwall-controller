@@ -8,13 +8,22 @@
 #include <cmath>
 #include <stdio.h>
 
+// What currently owns the matrix: the procedural animation, or a frame
+// posted via POST /matrix.
+enum class DisplayMode : uint8_t {
+    Animation,
+    Manual
+};
+
 struct SharedData {
     LedData<matrixRows, matrixCols> matrix;
     bool ledState;
+    DisplayMode mode;
 };
 SharedData sharedData {
     .matrix = {},
-    .ledState = false
+    .ledState = false,
+    .mode = DisplayMode::Animation
 };
 
 // The base64 GET/POST endpoints serialize the matrix with reinterpret_cast +
@@ -37,19 +46,26 @@ void setup_routes(ApiServer& server) {
             "       <ul>"
             "           <li>/led - GET: Toggle the LED state and return the current state.</li>"
             "           <li>/matrix - GET: Return the current LED matrix data in base64 format.</li>"
-            "           <li>/matrix - POST: Accept base64 encoded LED matrix data and update the matrix.</li>"
+            "           <li>/matrix - POST: Accept base64 encoded LED matrix data, show it (switches to manual mode).</li>"
+            "           <li>/animate - GET: Switch back to the procedural animation.</li>"
             "       </ul>"
             "   </body>"
             "</html>"
         );
-        
+
         return {200, "text/html", content.c_str()};
     });
-    
+
     server.add_endpoint("/led", Method::GET, [](std::string_view) -> Response {
         LwipGuard guard{};
         sharedData.ledState = !sharedData.ledState;
         return {200, "text/plain", sharedData.ledState ? "LED ON" : "LED OFF"};
+    });
+
+    server.add_endpoint("/animate", Method::GET, [](std::string_view) -> Response {
+        LwipGuard guard{};
+        sharedData.mode = DisplayMode::Animation;
+        return {200, "text/plain", "Animation mode"};
     });
 
     server.add_endpoint("/matrix", Method::GET, [](std::string_view) -> Response {
@@ -61,7 +77,7 @@ void setup_routes(ApiServer& server) {
             std::size_t matrixSize = sizeof(sharedData.matrix);
             toBase64(matrixData, matrixSize, base64Matrix);
         }
-        
+
         return {200, "text/plain", base64Matrix.c_str()};
     });
 
@@ -78,6 +94,8 @@ void setup_routes(ApiServer& server) {
                 return {400, "text/plain", "Invalid matrix data size"};
             }
             std::memcpy(&sharedData.matrix, decodedData.data(), decodedData.size());
+            // A posted frame wins over the animation until /animate is called.
+            sharedData.mode = DisplayMode::Manual;
         }
 
         return {200, "text/plain", "Matrix updated successfully"};
@@ -85,9 +103,7 @@ void setup_routes(ApiServer& server) {
 }
 
 // ---- Rainbow scroll animation --------------------------------------------------
-
-constexpr float rainbowCyclesPerSec = 2.0f; // two full hue cycles scroll by per second
-constexpr uint8_t brightness = 255;         // 0..255 scale factor (255 ≈ 100%, 128 ≈ 50%)
+// Parameters (rainbowCyclesPerSec, brightness) live in config.hpp.
 
 // Accumulated hue offset in 1/256 hue units; wraps at 256.
 static float huePhase = 0.0f;
@@ -115,15 +131,19 @@ static Pixel wheel(uint8_t pos) {
 
 // Advances the rainbow by dt seconds and writes the new frame into the matrix.
 // The phase is delta-time driven, so the scroll speed is frame-rate independent.
+// One full hue cycle spans the whole matrix diagonally (columns included).
 static void animate_rainbow(float dt) {
     huePhase += rainbowCyclesPerSec * dt * 256.0f;
     // fmodf (not a single subtract): a long stall must not leave the phase
     // denormalized for several frames.
     huePhase = std::fmodf(huePhase, 256.0f);
 
-    for (uint i = 0; i < matrixRows; ++i) {
-        uint8_t hue = static_cast<uint8_t>(i * 256 / matrixRows + huePhase);
-        sharedData.matrix.columns[activeColumn].pixels[i] = wheel(hue);
+    for (uint col = 0; col < matrixCols; ++col) {
+        for (uint row = 0; row < matrixRows; ++row) {
+            uint32_t index = col * matrixRows + row;
+            uint8_t hue = static_cast<uint8_t>(index * 256 / (matrixCols * matrixRows) + huePhase);
+            sharedData.matrix.columns[col].pixels[row] = wheel(hue);
+        }
     }
 }
 
@@ -133,13 +153,11 @@ int main() {
         return -1;
     }
 
-    const int port = 80;
-    auto server = ApiServer(port);
+    auto server = ApiServer(httpPort);
     setup_routes(server);
-    printf("HTTP server started on port %d with IP %s\n", port, ip4addr_ntoa(netif_ip4_addr(netif_list)));
+    printf("HTTP server started on port %d with IP %s\n", httpPort, ip4addr_ntoa(netif_ip4_addr(netif_list)));
 
-    const char* hostname = "ledfal";
-    [[maybe_unused]] auto mdns = MdnsServer(hostname, "ledfal");
+    [[maybe_unused]] auto mdns = MdnsServer(hostname, "ledfal", httpPort);
     printf("mDNS responder started with hostname: %s.local\n", hostname);
 
     uint64_t lastFrameUs = time_us_64();
@@ -156,11 +174,13 @@ int main() {
         lastFrameUs = nowUs;
 
         {
-            // Animation + snapshot are both fast (us-scale); the lwIP lock must
-            // NOT be held while waiting for the frame to clock out (~5 ms).
+            // Animation + transpose are both fast (us-scale); the lwIP lock
+            // must NOT be held while waiting for the frame to clock out (ms).
             LwipGuard guard{};
-            animate_rainbow(dt);
-            led_load_column(sharedData.matrix.columns[activeColumn].pixels.data());
+            if (sharedData.mode == DisplayMode::Animation) {
+                animate_rainbow(dt);
+            }
+            led_load_frame(sharedData.matrix.columns[0].pixels.data());
         }
         led_flush_frame();
 

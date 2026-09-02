@@ -1,11 +1,23 @@
-# Parallel WS2815 matrix — implementation plan (for later)
+# Parallel WS2815 matrix — implementation plan
 
 Target: the real wall, **75 rows × 21 columns = 1575 WS2815 LEDs**, driven as
 **21 parallel column strips** from a **Pico 2 W (RP2350)**.
 
-The current single-lane code (one strip on GP28) stays as-is for testing.
-This document describes how to grow it into the parallel version when the
-hardware is ready.
+> **STATUS UPDATE (bus architecture implemented):** the parallel bus design
+> described here is now the shipping code. Key differences from the original
+> text below:
+> - **One universal PIO program** (`ws2812_bus.pio`, `out x, 32`) serves any
+>   bus width 1–32 lanes: `MOV PINS` asserts only OUT_COUNT pins (RP2350
+>   datasheet, PINCTRL.OUT_COUNT), so no per-width program variants and no
+>   padding of unused pins are needed.
+> - Buses are declared in `include/config.hpp` (`buses[]`); dev rig is
+>   1 bus × 4 lanes (GP0–3), the final wall is 2 buses: GP0–13 (14) +
+>   GP16–22 (7) with buttons on GP14/15 (confirmed).
+> - The dev strip currently lives on the bus (not GP28/GP13 anymore);
+>   matrix geometry is `matrixRows`/`matrixCols` in config.hpp.
+>
+> The sections below are kept for reference; where they contradict the
+> status above, the status above wins.
 
 ---
 
