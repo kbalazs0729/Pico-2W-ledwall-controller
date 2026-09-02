@@ -16,10 +16,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 pico_sdk_init()
 
 add_executable(${PROJECT_NAME}
+    src/animation.cpp
     src/api_server.cpp
     src/app.cpp
     src/base64.cpp
     src/mdns.cpp
+    src/routes.cpp
     src/main.cpp
 )
 

@@ -7,6 +7,7 @@
 #include <string>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <string_view>
 
 enum class Method: uint8_t {
@@ -34,7 +35,9 @@ struct Response {
     const char* body;
 };
 
-typedef Response (*EndpointHandlerFunc)(std::string_view body);
+// std::function so handlers can capture (e.g. a Routes instance); a capture
+// of one pointer fits the small-buffer optimization, no heap allocation.
+using EndpointHandlerFunc = std::function<Response(std::string_view body)>;
 
 class ApiServer;
 
