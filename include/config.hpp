@@ -22,7 +22,7 @@ constexpr int httpPort = 80;
 
 // LEDs per daisy-chained column strip. Also the DMA frame length per bus
 // (one 32-bit bit-plane word per LED per color bit).
-constexpr uint8_t matrixRows = 70;
+constexpr uint8_t matrixRows = 75;
 
 // ---- Buses -----------------------------------------------------------------------
 
@@ -96,5 +96,5 @@ constexpr uint32_t frameIntervalUs = 1'000'000 / 60;
 
 // Rainbow scroll: full hue cycles scrolled per second, and a global
 // brightness scale (255 ≈ 100%, 128 ≈ 50%).
-constexpr float rainbowCyclesPerSec = 2.0f;
+constexpr float rainbowCyclesPerSec = 0.5f;
 constexpr uint8_t brightness = 255;

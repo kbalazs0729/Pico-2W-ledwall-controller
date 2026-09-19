@@ -1,12 +1,26 @@
+# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+if(WIN32)
+    set(USERHOME $ENV{USERPROFILE})
+else()
+    set(USERHOME $ENV{HOME})
+endif()
+set(sdkVersion 2.3.1)
+set(toolchainVersion 15_2_Rel1)
+set(picotoolVersion 2.3.1)
+set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+if (EXISTS ${picoVscode})
+    include(${picoVscode})
+endif()
+# ====================================================================================
 cmake_minimum_required(VERSION 3.13)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Konrad:
-set(PICO_BOARD pico_w CACHE STRING "Board target")
-set(PICO_PLATFORM "rp2040" CACHE STRING "Pico platform")
+#set(PICO_BOARD pico_w CACHE STRING "Board type")
+#set(PICO_PLATFORM "rp2040" CACHE STRING "Pico platform")
 # Balazs:
-#set(PICO_BOARD pico2_w CACHE STRING "Board target")
-#set(PICO_PLATFORM "rp2350-arm-s" CACHE STRING "Pico platform")
+set(PICO_BOARD pico2_w CACHE STRING "Board type")
+set(PICO_PLATFORM "rp2350-arm-s" CACHE STRING "Pico platform")
 
 include(pico_sdk_import.cmake)
 

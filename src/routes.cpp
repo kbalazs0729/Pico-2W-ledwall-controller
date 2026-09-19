@@ -25,6 +25,7 @@ void Routes::registerEndpoints(ApiServer& server) {
             "           <li>/matrix - POST: Accept base64 encoded LED matrix data, show it (switches to manual mode).</li>"
             "           <li>/animate - GET: Switch back to the procedural animation.</li>"
             "           <li>/animation - POST: Select animation by integer id (0 = Rainbow, 1 = BadApple).</li>"
+            "           <li>Build date: " __DATE__ " " __TIME__ ".</li>"
             "       </ul>"
             "   </body>"
             "</html>";
