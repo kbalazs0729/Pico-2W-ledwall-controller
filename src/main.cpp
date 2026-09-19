@@ -53,7 +53,7 @@ int main() {
                 }
                 animation->step(dt, sharedData.matrix);
             }
-            led_load_frame(sharedData.matrix.columns[0].pixels.data());
+            led_load_frame(sharedData.matrix.columns[0].pixels.data(), sharedData.brightness);
         }
         led_flush_frame();
 

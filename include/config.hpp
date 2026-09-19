@@ -102,7 +102,13 @@ constexpr uint32_t frameIntervalUs = 1'000'000 / 60;
 
 // ---- Animation defaults -------------------------------------------------------------
 
-// Rainbow scroll: full hue cycles scrolled per second, and a global
-// brightness scale (255 ≈ 100%, 128 ≈ 50%).
+// Rainbow scroll: full hue cycles scrolled per second.
 constexpr float rainbowCyclesPerSec = 0.5f;
-constexpr uint8_t brightness = 255;
+
+// ---- Brightness -------------------------------------------------------------------------
+
+// Global, linear output scale applied to every channel at frame load time
+// (255 = full, 128 ≈ 50%, 0 = off). This is the boot value; the runtime value
+// lives in SharedData and is settable via POST /brightness. No gamma curve:
+// this is an LED wall, not a display pipeline.
+constexpr uint8_t defaultBrightness = 255;

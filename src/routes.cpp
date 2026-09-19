@@ -3,8 +3,25 @@
 #include "base64.hpp"
 #include "lwip_guard.hpp"
 
+#include <cstdlib>
 #include <cstring>
 #include <string>
+
+namespace {
+
+// Strict unsigned parse of the whole view: rejects empty input, non-numeric
+// text, and trailing garbage ("0abc"), and enforces an inclusive maximum.
+bool parseUint(std::string_view text, unsigned long maxValue, unsigned long& out) {
+    if (text.empty()) return false;
+    std::string buffer(text);
+    char* end = nullptr;
+    unsigned long value = std::strtoul(buffer.c_str(), &end, 10);
+    if (end == buffer.c_str() || *end != '\0' || value > maxValue) return false;
+    out = value;
+    return true;
+}
+
+} // namespace
 
 void Routes::registerEndpoints(ApiServer& server) {
     server.add_endpoint("/", Method::GET, [](std::string_view) -> Response {
@@ -25,6 +42,8 @@ void Routes::registerEndpoints(ApiServer& server) {
             "           <li>/matrix - POST: Accept base64 encoded LED matrix data, show it (switches to manual mode).</li>"
             "           <li>/animation - GET: Report the current display mode and animation id.</li>"
             "           <li>/animation - POST: Select animation by integer id (0 = Rainbow, 1 = BadApple); an empty body resumes the current animation.</li>"
+            "           <li>/brightness - GET: Report the current global brightness (0-255).</li>"
+            "           <li>/brightness - POST: Set the global brightness (integer 0-255).</li>"
             "           <li>Build date: " __DATE__ " " __TIME__ ".</li>"
             "       </ul>"
             "   </body>"
@@ -61,17 +80,33 @@ void Routes::registerEndpoints(ApiServer& server) {
         }
         // Otherwise the body is a plain integer: the AnimationType id
         // (0 = Rainbow, 1 = BadApple, ...). The frontend owns the id->name
-        // mapping. Reject trailing garbage so "0abc" isn't read as id 0.
-        std::string text(body);
-        char* end = nullptr;
-        unsigned long id = std::strtoul(text.c_str(), &end, 10);
-        if (end == text.c_str() || *end != '\0' ||
-            id >= static_cast<unsigned long>(AnimationType::Count)) {
+        // mapping. Strict parse so "0abc" isn't read as id 0.
+        unsigned long id = 0;
+        if (!parseUint(body, static_cast<unsigned long>(AnimationType::Count) - 1, id)) {
             return {400, "text/plain", "Unknown animation id"};
         }
         m_shared.animationType = static_cast<AnimationType>(id);
         m_shared.mode = DisplayMode::Animation;
         return {200, "text/plain", "Animation selected"};
+    });
+
+    server.add_endpoint("/brightness", Method::GET, [this](std::string_view) -> Response {
+        LwipGuard guard{};
+        // Static scratch buffer, shared safely only because lwIP serializes
+        // all callbacks in one context — do NOT touch from the main loop.
+        static std::string status {};
+        status = "{\"brightness\":" + std::to_string(m_shared.brightness) + "}";
+        return {200, "application/json", status.c_str()};
+    });
+
+    server.add_endpoint("/brightness", Method::POST, [this](std::string_view body) -> Response {
+        LwipGuard guard{};
+        unsigned long value = 0;
+        if (!parseUint(body, 255, value)) {
+            return {400, "text/plain", "Brightness must be an integer 0-255"};
+        }
+        m_shared.brightness = static_cast<uint8_t>(value);
+        return {200, "text/plain", "Brightness set"};
     });
 
     server.add_endpoint("/matrix", Method::GET, [this](std::string_view) -> Response {

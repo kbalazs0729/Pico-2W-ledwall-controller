@@ -18,6 +18,7 @@ struct SharedData {
     bool ledState = false;
     DisplayMode mode = DisplayMode::Animation;
     AnimationType animationType = AnimationType::Rainbow;
+    uint8_t brightness = defaultBrightness;
 };
 
 // The base64 GET/POST endpoints serialize the matrix with reinterpret_cast +

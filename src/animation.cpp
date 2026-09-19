@@ -19,11 +19,8 @@ Pixel wheel(uint8_t pos) {
         pos -= 170;
         p = {static_cast<uint8_t>(pos * 3), 0, static_cast<uint8_t>(255 - pos * 3)};
     }
-    // Scale to the target brightness (keeps the hue; >>8 means 255 maps to
-    // 254, a standard fast approximation of full scale).
-    p.r = (p.r * brightness) >> 8;
-    p.g = (p.g * brightness) >> 8;
-    p.b = (p.b * brightness) >> 8;
+    // Full brightness; the global brightness scale is applied centrally in
+    // led_load_frame() so it also covers posted /matrix frames.
     return p;
 }
 
@@ -70,7 +67,8 @@ public:
         }
 
         const uint8_t* frame = badapple_video + m_frame * badapple::frameBytes;
-        constexpr uint8_t white = (255 * brightness) >> 8;
+        // Full white; led_load_frame() applies the global brightness scale.
+        constexpr uint8_t white = 255;
         for (uint32_t col = 0; col < matrixCols; ++col) {
             for (uint32_t row = 0; row < matrixRows; ++row) {
                 uint32_t i = col * matrixRows + row;
