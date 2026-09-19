@@ -109,8 +109,10 @@ bus refactor.
    `include/secrets.hpp` (template: `secrets.hpp.example`); git history
    rewritten to purge both networks' creds.
 2. **POST /matrix is dead** → mode toggle added: `DisplayMode {Animation,
-   Manual}` in `SharedData`; POST /matrix switches to Manual,
-   `GET /animate` switches back.
+   Manual}` in `SharedData`; POST /matrix switches to Manual, and
+   `POST /animation` with an empty body resumes the current animation
+   (`GET /animation` reports mode + id). The old `/animate` endpoint was
+   folded into `/animation`.
 3. **Button pins** → confirmed **GP14 / GP15**; final layout stays
    bus A = GP0–13 (14 lanes) + bus B = GP16–22 (7 lanes), reserved as
    `buttonPinA/buttonPinB` in `config.hpp`.
