@@ -290,6 +290,63 @@ private:
     Rng m_rng;
 };
 
+// Plasma: animated 3D value noise mapped through the color wheel, so smooth
+// color clouds drift across the wall. Two octaves add a little detail.
+class Plasma final : public Animation {
+public:
+    void step(float dt, LedData<matrixRows, matrixCols>& matrix) override {
+        m_time += plasmaSpeed * dt;
+        for (uint32_t col = 0; col < matrixCols; ++col) {
+            for (uint32_t row = 0; row < matrixRows; ++row) {
+                float x = col * plasmaScale;
+                float y = row * plasmaScale;
+                float v = noise(x, y, m_time) * 0.7f +
+                          noise(x * 2.0f, y * 2.0f, m_time * 1.5f) * 0.3f;
+                matrix.columns[col].pixels[row] =
+                    wheel(static_cast<uint8_t>(v * 255.0f));
+            }
+        }
+    }
+
+private:
+    float m_time = 0.0f;
+
+    static uint32_t hash(int x, int y, int z) {
+        uint32_t h = static_cast<uint32_t>(x) * 0x8DA6B343u ^
+                     static_cast<uint32_t>(y) * 0xD8163841u ^
+                     static_cast<uint32_t>(z) * 0xCB1AB31Fu;
+        h ^= h >> 15;
+        h *= 0x2C1B3C6Du;
+        h ^= h >> 12;
+        h *= 0x297A2D39u;
+        h ^= h >> 15;
+        return h;
+    }
+
+    static float corner(int x, int y, int z) {
+        return static_cast<float>(hash(x, y, z) >> 24) / 255.0f;
+    }
+
+    static float fade(float t) { return t * t * (3.0f - 2.0f * t); }
+    static float lerp(float a, float b, float t) { return a + (b - a) * t; }
+
+    static float noise(float x, float y, float z) {
+        int xi = static_cast<int>(std::floor(x));
+        int yi = static_cast<int>(std::floor(y));
+        int zi = static_cast<int>(std::floor(z));
+        float xf = fade(x - static_cast<float>(xi));
+        float yf = fade(y - static_cast<float>(yi));
+        float zf = fade(z - static_cast<float>(zi));
+
+        float x00 = lerp(corner(xi, yi, zi), corner(xi + 1, yi, zi), xf);
+        float x10 = lerp(corner(xi, yi + 1, zi), corner(xi + 1, yi + 1, zi), xf);
+        float x01 = lerp(corner(xi, yi, zi + 1), corner(xi + 1, yi, zi + 1), xf);
+        float x11 = lerp(corner(xi, yi + 1, zi + 1), corner(xi + 1, yi + 1, zi + 1), xf);
+
+        return lerp(lerp(x00, x10, yf), lerp(x01, x11, yf), zf);
+    }
+};
+
 } // namespace
 
 std::unique_ptr<Animation> make_animation(AnimationType type) {
@@ -302,6 +359,8 @@ std::unique_ptr<Animation> make_animation(AnimationType type) {
             return std::make_unique<Rain>();
         case AnimationType::Stars:
             return std::make_unique<Stars>();
+        case AnimationType::Plasma:
+            return std::make_unique<Plasma>();
         case AnimationType::Rainbow:
         case AnimationType::Count:
         default:

@@ -134,6 +134,11 @@ constexpr uint8_t rainTrailLen = 6;         // max trail length (min is 3)
 constexpr float starsSpawnPerSec = 18.0f;
 constexpr float starsDecayPerSec = 0.8f;    // fade-out rate (fraction per second)
 
+// Plasma: animated smooth color noise. scale = noise lattice cells per LED
+// (smaller = larger blobs), speed = time units per second.
+constexpr float plasmaScale = 0.09f;
+constexpr float plasmaSpeed = 0.35f;
+
 // ---- Brightness -------------------------------------------------------------------------
 
 // Global, linear output scale applied to every channel at frame load time
