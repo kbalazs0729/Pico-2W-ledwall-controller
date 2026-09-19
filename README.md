@@ -79,7 +79,6 @@ The device serves on port 80 as `http://ledfal.local`.
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/` | HTML endpoint index |
-| GET | `/led` | Toggle the internal LED state flag |
 | GET | `/animation` | Current state, e.g. `{"mode":"animation","animationId":0}` |
 | POST | `/animation` | Select animation by id (0 = Rainbow, 1 = Bad Apple); empty body resumes the current one |
 | GET | `/brightness` | Current brightness, e.g. `{"brightness":200}` |
