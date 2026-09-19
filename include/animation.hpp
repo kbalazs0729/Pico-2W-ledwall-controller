@@ -11,6 +11,10 @@
 enum class AnimationType : uint8_t {
     Rainbow,
     BadApple,
+    Fire,
+    Rain,
+    Stars,
+    Plasma,
     Count
 };
 

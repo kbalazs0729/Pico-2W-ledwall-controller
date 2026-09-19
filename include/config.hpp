@@ -118,6 +118,13 @@ constexpr float maxFrameDtSec = 0.1f;
 // Rainbow scroll: full hue cycles scrolled per second.
 constexpr float rainbowCyclesPerSec = 0.5f;
 
+// Fire: per-column heat diffusion rising from the bottom row. The simulation
+// runs at a fixed tick rate so its look doesn't depend on display fps.
+constexpr float fireTickHz = 30.0f;         // simulation ticks per second
+constexpr uint8_t fireCooling = 5;          // heat lost per tick
+constexpr uint8_t fireSpawnThreshold = 200; // 0..255; higher = more bottom sparks
+constexpr uint8_t fireSparkMin = 160;       // minimum bottom-row spark intensity
+
 // ---- Brightness -------------------------------------------------------------------------
 
 // Global, linear output scale applied to every channel at frame load time

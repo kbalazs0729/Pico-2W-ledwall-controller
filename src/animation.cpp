@@ -112,12 +112,86 @@ private:
     uint32_t m_frame = 0;
 };
 
+// Fire: classic heat diffusion. Logical row 0 is the top of the wall, so the
+// fire is seeded on the last row and heat propagates upward (toward lower row
+// indices). Runs at a fixed tick rate (config.hpp) so its look doesn't depend
+// on the display frame rate.
+class Fire final : public Animation {
+public:
+    Fire() : m_rng(nextSeed()) {}
+
+    void step(float dt, LedData<matrixRows, matrixCols>& matrix) override {
+        constexpr float tickSec = 1.0f / fireTickHz;
+        m_accum += dt;
+        // Bound the catch-up so a stall can't run a huge loop in one frame.
+        constexpr int maxTicks = 4;
+        int ticks = 0;
+        while (m_accum >= tickSec && ticks < maxTicks) {
+            m_accum -= tickSec;
+            ++ticks;
+            simTick();
+        }
+        if (m_accum > tickSec) m_accum = 0.0f; // drop the backlog
+
+        for (uint32_t col = 0; col < matrixCols; ++col) {
+            for (uint32_t row = 0; row < matrixRows; ++row) {
+                matrix.columns[col].pixels[row] = fireColor(m_heat[row][col]);
+            }
+        }
+    }
+
+private:
+    uint8_t m_heat[matrixRows][matrixCols] {};
+    float m_accum = 0.0f;
+    Rng m_rng;
+
+    // black -> red -> orange -> yellow, with a touch of white at the hottest.
+    static Pixel fireColor(uint8_t heat) {
+        uint32_t r = heat;
+        uint32_t g = heat > 96 ? (heat - 96u) * 2u : 0u;
+        uint32_t b = heat > 224 ? (heat - 224u) * 4u : 0u;
+        if (g > 255) g = 255;
+        if (b > 255) b = 255;
+        return {static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b)};
+    }
+
+    void simTick() {
+        constexpr uint32_t last = matrixRows - 1;
+
+        // Seed the bottom row with random sparks.
+        for (uint32_t col = 0; col < matrixCols; ++col) {
+            if (m_rng.byte() < fireSpawnThreshold) {
+                m_heat[last][col] = static_cast<uint8_t>(
+                    fireSparkMin + m_rng.byte() % (256 - fireSparkMin));
+            } else {
+                m_heat[last][col] = 0;
+            }
+        }
+
+        // Propagate upward: average the cell below (weighted) with its
+        // neighbours and the row below that, then cool a little.
+        for (uint32_t row = 0; row < last; ++row) {
+            for (uint32_t col = 0; col < matrixCols; ++col) {
+                uint32_t below = m_heat[row + 1][col];
+                uint32_t left = col > 0 ? m_heat[row + 1][col - 1] : below;
+                uint32_t right = col + 1 < matrixCols ? m_heat[row + 1][col + 1] : below;
+                uint32_t below2 = (row + 2 < matrixRows) ? m_heat[row + 2][col] : below;
+                uint32_t avg = (below * 2 + left + right + below2) / 6;
+                int v = static_cast<int>(avg) - fireCooling;
+                m_heat[row][col] = v > 0 ? static_cast<uint8_t>(v) : 0;
+            }
+        }
+    }
+};
+
 } // namespace
 
 std::unique_ptr<Animation> make_animation(AnimationType type) {
     switch (type) {
         case AnimationType::BadApple:
             return std::make_unique<BadApple>();
+        case AnimationType::Fire:
+            return std::make_unique<Fire>();
         case AnimationType::Rainbow:
         case AnimationType::Count:
         default:
