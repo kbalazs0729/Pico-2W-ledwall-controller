@@ -127,7 +127,7 @@ lock (`LwipGuard`).
 
 ## Special Thanks
 
-- _(add name here)_
+- Kiss Konrád
 
 ## License
 
