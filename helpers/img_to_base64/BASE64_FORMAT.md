@@ -87,6 +87,9 @@ enough to blow the 32-bit string limit, use a chunked approach instead.
 
 - The byte order is **column-major** — for each column you walk all rows.
   Do not emit row-major data (row outer loop) or the image will be transposed.
+- Orientation: row 0 is the **top** of the image. The firmware compensates
+  for strips wired bottom-to-top via `flipVertical` / `flipHorizontal` in
+  `include/config.hpp`, so clients never need to rotate the image.
 - Pixels are raw RGB, interpreted as sRGB (0–255 per channel).
 - Round-trip check: encode, then decode the base64 back and confirm you get the
   exact same `width * height * 3` byte array.

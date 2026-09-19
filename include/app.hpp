@@ -16,8 +16,10 @@
 int init_hardware();
 
 // Transposes the whole matrix (column-major packed pixels) into per-bus
-// GRB bit-plane words in the internal frame buffers. Fast (us-scale);
-// safe to call while holding the lwIP lock.
+// GRB bit-plane words in the internal frame buffers. Applies the physical
+// orientation flags from config.hpp (row 0 = top in the matrix; position 0 =
+// first LED = data-in end on the strip). Fast (us-scale); safe to call while
+// holding the lwIP lock.
 void led_load_frame(const Pixel* pixelsColMajor);
 
 // Streams all frame buffers to their buses via DMA + PIO and blocks until
