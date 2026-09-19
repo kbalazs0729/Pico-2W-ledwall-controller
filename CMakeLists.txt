@@ -37,6 +37,7 @@ add_executable(${PROJECT_NAME}
     src/base64.cpp
     src/mdns.cpp
     src/routes.cpp
+    src/wifi.cpp
     src/main.cpp
     include/generated/badapple_video.S
 )

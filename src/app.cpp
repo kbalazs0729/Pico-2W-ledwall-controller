@@ -1,4 +1,5 @@
 #include "app.hpp"
+#include "wifi.hpp"
 
 #include <stdio.h>
 
@@ -22,10 +23,10 @@ int init_hardware() {
     }
     cyw43_arch_enable_sta_mode();
 
-    if (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 10000)) {
-        printf("Wi-Fi Connection Failed\n");
-        return -1;
-    }
+    // Non-blocking: the device boots and serves regardless of Wi-Fi state.
+    // wifi.cpp connects and reconnects in the background (call wifi_service()
+    // from the main loop).
+    wifi_start(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK);
 
     int offset = pio_add_program(s_pio, &ws2812_bus_program);
     if (offset < 0) {

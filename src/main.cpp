@@ -5,6 +5,7 @@
 #include "animation.hpp"
 #include "shared_data.hpp"
 #include "routes.hpp"
+#include "wifi.hpp"
 
 #include <stdio.h>
 
@@ -19,7 +20,7 @@ int main() {
     auto server = ApiServer(httpPort);
     Routes routes(sharedData);
     routes.registerEndpoints(server);
-    printf("HTTP server started on port %d with IP %s\n", httpPort, ip4addr_ntoa(netif_ip4_addr(netif_list)));
+    printf("HTTP server listening on port %d (Wi-Fi connects in the background)\n", httpPort);
 
     [[maybe_unused]] auto mdns = MdnsServer(hostname, "ledfal", httpPort);
     printf("mDNS responder started with hostname: %s.local\n", hostname);
@@ -32,8 +33,11 @@ int main() {
 
     while (true) {
         {
+            // Wi-Fi service + the on-board LED as a connection indicator
+            // (blinks while not connected, off once up).
             LwipGuard guard{};
-            cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, sharedData.ledState);
+            wifi_service();
+            wifi_status_led_update();
         }
 
         uint64_t nowUs = time_us_64();
