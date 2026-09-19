@@ -24,6 +24,14 @@ constexpr int httpPort = 80;
 // (one 32-bit bit-plane word per LED per color bit).
 constexpr uint8_t matrixRows = 75;
 
+// ---- Orientation -----------------------------------------------------------------
+// Physical strips are wired bottom-to-top (the first LED / data-in end sits at
+// the bottom), while the logical matrix and the base64 API use row 0 = top.
+// led_load_frame() compensates here at the hardware boundary, so no client or
+// generator needs to know the wiring direction.
+constexpr bool flipVertical = true;    // bottom-to-top strips -> reverse rows
+constexpr bool flipHorizontal = false; // right-to-left columns -> reverse lanes
+
 // ---- Buses -----------------------------------------------------------------------
 
 // A "bus" is one consecutive run of GPIOs driven by a single PIO state

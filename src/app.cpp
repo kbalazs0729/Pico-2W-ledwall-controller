@@ -67,22 +67,28 @@ int init_hardware() {
 }
 
 void led_load_frame(const Pixel* pixelsColMajor) {
-    for (uint row = 0; row < matrixRows; ++row) {
+    for (uint pos = 0; pos < matrixRows; ++pos) {
+        // `pos` is the position along the strip: 0 is the first LED, i.e. the
+        // data-in end. The logical matrix and the base64 API use row 0 = top,
+        // so map the position to a source row here (config.hpp orientation).
+        uint row = flipVertical ? (matrixRows - 1 - pos) : pos;
+
         for (uint bit = 0; bit < 24; ++bit) {
             // Gather one bit-plane across all columns. Wire order is GRB,
             // MSB first (bit 0..7 = green, 8..15 = red, 16..23 = blue).
             uint32_t plane = 0;
             for (uint col = 0; col < matrixCols; ++col) {
+                uint lane = flipHorizontal ? (matrixCols - 1 - col) : col;
                 const Pixel& p = pixelsColMajor[col * matrixRows + row];
                 uint8_t channel = bit < 8 ? p.g : (bit < 16 ? p.r : p.b);
-                plane |= ((channel >> (7 - (bit & 7))) & 1u) << col;
+                plane |= ((channel >> (7 - (bit & 7))) & 1u) << lane;
             }
             // Distribute the plane over the buses, in bus order.
             uint8_t planeOffset = 0;
             for (std::size_t b = 0; b < busCount; ++b) {
                 uint8_t lanes = buses[b].lanes;
                 uint32_t mask = lanes >= 32 ? 0xFFFFFFFFu : ((1u << lanes) - 1u);
-                s_frameBuf[b][row * 24 + bit] = (plane >> planeOffset) & mask;
+                s_frameBuf[b][pos * 24 + bit] = (plane >> planeOffset) & mask;
                 planeOffset += lanes;
             }
         }
