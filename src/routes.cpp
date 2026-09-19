@@ -1,8 +1,6 @@
 #include "routes.hpp"
-
 #include "base64.hpp"
 #include "lwip_guard.hpp"
-
 #include <cstdlib>
 #include <cstring>
 #include <string>
