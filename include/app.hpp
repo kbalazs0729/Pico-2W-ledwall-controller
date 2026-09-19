@@ -12,7 +12,9 @@
 
 // ---- Public interface ----------------------------------------------------------
 
-// Sets up stdio, Wi-Fi, and one PIO state machine + DMA channel per bus.
+// Sets up stdio, starts the non-blocking Wi-Fi manager (wifi.hpp), and sets
+// up one PIO state machine + DMA channel per bus. Does not block on the Wi-Fi
+// link: the server and animation run regardless of connectivity.
 int init_hardware();
 
 // Transposes the whole matrix (column-major packed pixels) into per-bus

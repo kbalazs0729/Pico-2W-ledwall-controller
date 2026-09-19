@@ -18,6 +18,17 @@
 constexpr char hostname[] = "ledfal";
 constexpr int httpPort = 80;
 
+// Wi-Fi connection management (wifi.cpp). The device boots without Wi-Fi and
+// reconnects in the background; each attempt is bounded, and retries back off
+// exponentially from min to max.
+constexpr uint32_t wifiConnectTimeoutMs = 15000;
+constexpr uint32_t wifiReconnectMinDelayMs = 1000;
+constexpr uint32_t wifiReconnectMaxDelayMs = 8000;
+
+// On-board wireless LED: blinks at ~2 Hz (half period below) while not
+// connected, and stays off once the link is up.
+constexpr uint32_t wifiLedBlinkHalfPeriodMs = 250;
+
 // ---- Matrix geometry -------------------------------------------------------------
 
 // LEDs per daisy-chained column strip. Also the DMA frame length per bus
@@ -111,4 +122,4 @@ constexpr float rainbowCyclesPerSec = 0.5f;
 // (255 = full, 128 ≈ 50%, 0 = off). This is the boot value; the runtime value
 // lives in SharedData and is settable via POST /brightness. No gamma curve:
 // this is an LED wall, not a display pipeline.
-constexpr uint8_t defaultBrightness = 255;
+constexpr uint8_t defaultBrightness = 67;
