@@ -7,6 +7,7 @@ include/secrets.hpp
 
 # Editor / language-server caches
 .cache/
+.vscode/
 
 # Python
 __pycache__/
@@ -25,3 +26,8 @@ desktop.ini
 *.png
 *.bmp
 *.ppm
+
+# Local design notes (kept on disk, not published)
+AUDIT.md
+FINDINGS.md
+PARALLEL_MATRIX_PLAN.md
