@@ -125,6 +125,10 @@ transfer per bus, paced by its PIO state machine. The lwIP/cyw43 callbacks run
 concurrently in IRQ context, so all shared state is accessed under a recursive
 lock (`LwipGuard`).
 
+## Special Thanks
+
+- _(add name here)_
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
