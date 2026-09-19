@@ -130,6 +130,10 @@ constexpr uint32_t rainDropCount = 40;
 constexpr float rainSpeedRowsPerSec = 22.0f;
 constexpr uint8_t rainTrailLen = 6;         // max trail length (min is 3)
 
+// Stars / Twinkle: sparse colored sparks on a buffer that fades to black.
+constexpr float starsSpawnPerSec = 18.0f;
+constexpr float starsDecayPerSec = 0.8f;    // fade-out rate (fraction per second)
+
 // ---- Brightness -------------------------------------------------------------------------
 
 // Global, linear output scale applied to every channel at frame load time

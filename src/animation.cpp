@@ -248,6 +248,48 @@ private:
     }
 };
 
+// Stars: sparse colored sparks that fade out over a dark field, so it reads as
+// a twinkling starfield.
+class Stars final : public Animation {
+public:
+    Stars() : m_rng(nextSeed()) {}
+
+    void step(float dt, LedData<matrixRows, matrixCols>& matrix) override {
+        // Fade the whole buffer toward black; k is the per-frame retention.
+        float k = 1.0f - starsDecayPerSec * dt;
+        if (k < 0.0f) k = 0.0f;
+        for (uint32_t col = 0; col < matrixCols; ++col) {
+            for (uint32_t row = 0; row < matrixRows; ++row) {
+                Pixel& p = m_buf[row][col];
+                p.r = static_cast<uint8_t>(p.r * k);
+                p.g = static_cast<uint8_t>(p.g * k);
+                p.b = static_cast<uint8_t>(p.b * k);
+            }
+        }
+
+        // Spawn new sparks.
+        m_spawn += starsSpawnPerSec * dt;
+        for (int i = 0; i < 16 && m_spawn >= 1.0f; ++i) {
+            m_spawn -= 1.0f;
+            uint32_t col = m_rng.below(matrixCols);
+            uint32_t row = m_rng.below(matrixRows);
+            m_buf[row][col] = wheel(m_rng.byte());
+        }
+        if (m_spawn > 16.0f) m_spawn = 16.0f; // drop any backlog
+
+        for (uint32_t col = 0; col < matrixCols; ++col) {
+            for (uint32_t row = 0; row < matrixRows; ++row) {
+                matrix.columns[col].pixels[row] = m_buf[row][col];
+            }
+        }
+    }
+
+private:
+    Pixel m_buf[matrixRows][matrixCols] {};
+    float m_spawn = 0.0f;
+    Rng m_rng;
+};
+
 } // namespace
 
 std::unique_ptr<Animation> make_animation(AnimationType type) {
@@ -258,6 +300,8 @@ std::unique_ptr<Animation> make_animation(AnimationType type) {
             return std::make_unique<Fire>();
         case AnimationType::Rain:
             return std::make_unique<Rain>();
+        case AnimationType::Stars:
+            return std::make_unique<Stars>();
         case AnimationType::Rainbow:
         case AnimationType::Count:
         default:
