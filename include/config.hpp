@@ -125,6 +125,11 @@ constexpr uint8_t fireCooling = 5;          // heat lost per tick
 constexpr uint8_t fireSpawnThreshold = 200; // 0..255; higher = more bottom sparks
 constexpr uint8_t fireSparkMin = 160;       // minimum bottom-row spark intensity
 
+// Rain: a pool of drops falling down the columns, each with a fading trail.
+constexpr uint32_t rainDropCount = 40;
+constexpr float rainSpeedRowsPerSec = 22.0f;
+constexpr uint8_t rainTrailLen = 6;         // max trail length (min is 3)
+
 // ---- Brightness -------------------------------------------------------------------------
 
 // Global, linear output scale applied to every channel at frame load time
