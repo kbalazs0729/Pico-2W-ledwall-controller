@@ -66,7 +66,7 @@ int init_hardware() {
     return 0;
 }
 
-void led_load_frame(const Pixel* pixelsColMajor) {
+void led_load_frame(const Pixel* pixelsColMajor, uint8_t brightness) {
     for (uint pos = 0; pos < matrixRows; ++pos) {
         // `pos` is the position along the strip: 0 is the first LED, i.e. the
         // data-in end. The logical matrix and the base64 API use row 0 = top,
@@ -81,6 +81,10 @@ void led_load_frame(const Pixel* pixelsColMajor) {
                 uint lane = flipHorizontal ? (matrixCols - 1 - col) : col;
                 const Pixel& p = pixelsColMajor[col * matrixRows + row];
                 uint8_t channel = bit < 8 ? p.g : (bit < 16 ? p.r : p.b);
+                if (brightness != 255) {
+                    // Global linear scale; full scale maps 255 -> 255.
+                    channel = static_cast<uint8_t>((channel * brightness) / 255);
+                }
                 plane |= ((channel >> (7 - (bit & 7))) & 1u) << lane;
             }
             // Distribute the plane over the buses, in bus order.
