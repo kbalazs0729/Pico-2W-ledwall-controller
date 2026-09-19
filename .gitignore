@@ -7,7 +7,7 @@ include/secrets.hpp
 
 # Editor / language-server caches
 .cache/
-.vscode/
+
 
 # Python
 __pycache__/
