@@ -108,6 +108,11 @@ constexpr uint32_t latchTimeUs = 400;
 // so 16.6 ms leaves plenty of CPU slack for Wi-Fi and animations.
 constexpr uint32_t frameIntervalUs = 1'000'000 / 60;
 
+// Upper bound on the per-frame delta time handed to animations. After a stall
+// (Wi-Fi hiccup, flash write) the next frame's real dt can be large; clamping
+// keeps delta-time-driven simulations from jumping. 100 ms = 6 dropped frames.
+constexpr float maxFrameDtSec = 0.1f;
+
 // ---- Animation defaults -------------------------------------------------------------
 
 // Rainbow scroll: full hue cycles scrolled per second.

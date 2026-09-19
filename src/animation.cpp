@@ -2,9 +2,37 @@
 
 #include "generated/badapple_video.hpp"
 
+#include "pico/time.h"
+
 #include <cmath>
 
 namespace {
+
+// Tiny xorshift32 PRNG. rand() would lock and is overkill; this keeps step()
+// cheap and self-contained. Each animation instance gets its own seed so their
+// sequences don't correlate.
+struct Rng {
+    uint32_t s;
+    explicit Rng(uint32_t seed) : s(seed ? seed : 0x9E3779B9u) {}
+
+    uint32_t next() {
+        uint32_t x = s;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        return s = x;
+    }
+
+    uint8_t byte() { return static_cast<uint8_t>(next() >> 24); }
+    uint32_t below(uint32_t n) { return n ? next() % n : 0; }
+};
+
+// Seed for a new animation instance: mix the boot time with a counter so
+// successive instances (and reboots) look different.
+[[maybe_unused]] uint32_t nextSeed() {
+    static uint32_t counter = 0;
+    return static_cast<uint32_t>(time_us_64()) ^ (++counter * 2654435761u);
+}
 
 // Fast full-saturation HSV->RGB ("color wheel"): pos 0..255 sweeps R->G->B->R.
 Pixel wheel(uint8_t pos) {
