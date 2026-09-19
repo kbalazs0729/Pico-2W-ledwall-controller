@@ -1,5 +1,27 @@
+# Build output
 build/
-helpers/__pycache__/
 compile_commands.json
+
+# Secrets (copy secrets.hpp.example and fill in your own)
 include/secrets.hpp
-helpers/bad_apple/preview_*.mp4
+
+# Editor / language-server caches
+.cache/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Media / image assets are not tracked (regenerate via helpers/)
+*.mov
+*.mp4
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.ppm
