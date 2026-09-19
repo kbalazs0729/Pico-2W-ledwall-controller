@@ -1,8 +1,6 @@
 #include "routes.hpp"
-
 #include "base64.hpp"
 #include "lwip_guard.hpp"
-
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -37,7 +35,6 @@ void Routes::registerEndpoints(ApiServer& server) {
             "       This is the Pico W LED Matrix API Endpoint.<br>"
             "       Available endpoints:<br>"
             "       <ul>"
-            "           <li>/led - GET: Toggle the LED state and return the current state.</li>"
             "           <li>/matrix - GET: Return the current LED matrix data in base64 format.</li>"
             "           <li>/matrix - POST: Accept base64 encoded LED matrix data, show it (switches to manual mode).</li>"
             "           <li>/animation - GET: Report the current display mode and animation id.</li>"
@@ -50,12 +47,6 @@ void Routes::registerEndpoints(ApiServer& server) {
             "</html>";
 
         return {200, "text/html", content};
-    });
-
-    server.add_endpoint("/led", Method::GET, [this](std::string_view) -> Response {
-        LwipGuard guard{};
-        m_shared.ledState = !m_shared.ledState;
-        return {200, "text/plain", m_shared.ledState ? "LED ON" : "LED OFF"};
     });
 
     server.add_endpoint("/animation", Method::GET, [this](std::string_view) -> Response {

@@ -50,23 +50,20 @@ constexpr bool flipHorizontal = false; // right-to-left columns -> reverse lanes
 // the global bit-plane, distributed over the buses in order:
 // bus 0 takes columns 0..lanes0-1, bus 1 the next lanes1 columns, etc.
 //
-// Dev rig:   1 bus  — GP0..3, 4 lanes.
-// Final wall: 2 buses — GP0..13 (14 lanes) + GP16..22 (7 lanes),
-//             buttons sit on GP14/GP15 between them (not implemented yet).
+// The wall uses 2 buses — GP0..13 (14 lanes) + GP16..22 (7 lanes) — with
+// buttons sitting on GP14/GP15 between them.
 struct BusConfig {
     uint8_t pinBase; // first GPIO of the consecutive run
     uint8_t lanes;   // number of column strips on this bus (1..32)
 };
 
 constexpr BusConfig buses[] = {
-    // {0, 4},
-    // Final wall:
     {0, 14},
     {16, 7},
 };
 constexpr std::size_t busCount = std::size(buses);
 
-// Buttons (final wall): wired between the two buses. Reserved, not yet used.
+// Buttons: wired between the two buses. Reserved, not yet used.
 constexpr uint8_t buttonPinA = 14;
 constexpr uint8_t buttonPinB = 15;
 

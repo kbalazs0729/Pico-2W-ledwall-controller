@@ -15,7 +15,6 @@ enum class DisplayMode : uint8_t {
 // ALL access must hold LwipGuard.
 struct SharedData {
     LedData<matrixRows, matrixCols> matrix {};
-    bool ledState = false;
     DisplayMode mode = DisplayMode::Animation;
     AnimationType animationType = AnimationType::Rainbow;
     uint8_t brightness = defaultBrightness;
