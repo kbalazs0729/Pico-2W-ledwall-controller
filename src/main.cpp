@@ -42,6 +42,7 @@ int main() {
 
         uint64_t nowUs = time_us_64();
         float dt = (nowUs - lastFrameUs) / 1e6f;
+        if (dt > maxFrameDtSec) dt = maxFrameDtSec;
         lastFrameUs = nowUs;
 
         {

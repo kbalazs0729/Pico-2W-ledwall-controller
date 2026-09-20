@@ -108,10 +108,36 @@ constexpr uint32_t latchTimeUs = 400;
 // so 16.6 ms leaves plenty of CPU slack for Wi-Fi and animations.
 constexpr uint32_t frameIntervalUs = 1'000'000 / 60;
 
+// Upper bound on the per-frame delta time handed to animations. After a stall
+// (Wi-Fi hiccup, flash write) the next frame's real dt can be large; clamping
+// keeps delta-time-driven simulations from jumping. 100 ms = 6 dropped frames.
+constexpr float maxFrameDtSec = 0.1f;
+
 // ---- Animation defaults -------------------------------------------------------------
 
 // Rainbow scroll: full hue cycles scrolled per second.
 constexpr float rainbowCyclesPerSec = 0.5f;
+
+// Fire: per-column heat diffusion rising from the bottom row. The simulation
+// runs at a fixed tick rate so its look doesn't depend on display fps.
+constexpr float fireTickHz = 30.0f;         // simulation ticks per second
+constexpr uint8_t fireCooling = 5;          // heat lost per tick
+constexpr uint8_t fireSpawnThreshold = 200; // 0..255; higher = more bottom sparks
+constexpr uint8_t fireSparkMin = 160;       // minimum bottom-row spark intensity
+
+// Rain: a pool of drops falling down the columns, each with a fading trail.
+constexpr uint32_t rainDropCount = 40;
+constexpr float rainSpeedRowsPerSec = 22.0f;
+constexpr uint8_t rainTrailLen = 6;         // max trail length (min is 3)
+
+// Stars / Twinkle: sparse colored sparks on a buffer that fades to black.
+constexpr float starsSpawnPerSec = 18.0f;
+constexpr float starsDecayPerSec = 0.8f;    // fade-out rate (fraction per second)
+
+// Plasma: animated smooth color noise. scale = noise lattice cells per LED
+// (smaller = larger blobs), speed = time units per second.
+constexpr float plasmaScale = 0.09f;
+constexpr float plasmaSpeed = 0.35f;
 
 // ---- Brightness -------------------------------------------------------------------------
 
