@@ -28,7 +28,7 @@ animations and exposes a small HTTP API, with mDNS discovery, for control.
 
 - Raspberry Pi Pico 2 W (RP2350, 4 MB flash)
 - 21 × WS2815 strips, 75 LEDs each (12 V) — 1575 LEDs total
-- 3 × 74AHC74HCT541T245 octal level shifters (3.3 V → 5 V data)
+- 3 × 74HCT541 octal level shifters (3.3 V → 5 V data)
 - 47 Ω series resistor per data lane, common ground
 
 ### Pin map
