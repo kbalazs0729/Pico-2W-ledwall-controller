@@ -4,6 +4,14 @@ Firmware for a **75 × 21 (1575-pixel) WS2815 LED wall** driven by a
 **Raspberry Pi Pico 2 W (RP2350)**. It renders procedural and pre-baked
 animations and exposes a small HTTP API, with mDNS discovery, for control.
 
+## Quick start
+
+1. Copy `include/secrets.hpp.example` to `include/secrets.hpp` and set your
+   Wi-Fi credentials.
+2. Build and flash the firmware (see [Building](#building)).
+3. Open `http://ledfal.local` for the API index, or start the web UI:
+   `cd web && npm install && npm run dev`.
+
 ## Features
 
 - 21 column strips driven **in parallel** over PIO + DMA (~2.25 ms per frame
@@ -20,9 +28,11 @@ animations and exposes a small HTTP API, with mDNS discovery, for control.
   on-board LED blinks until the link is up
 - Runtime global **brightness** (0–255), applied centrally to animations and
   uploaded frames
-- Vertical/horizontal **flip** options so the firmware can match the physical
-  wiring direction
-- Raw frame upload as a base64 blob, with a small Python toolchain
+- Vertical/horizontal **flip** and a configurable **wire color order**
+  (RGB/GRB) so the firmware matches the physical wiring
+- Raw frame upload as a base64 blob, with a small Python toolchain and a
+  **React control panel** (`web/`)
+- **CORS-enabled** API, so a browser page can talk to the device directly
 
 ## Hardware
 
@@ -47,7 +57,8 @@ All of this is defined in `include/config.hpp`.
 ```
 src/        firmware: main loop, LED/PIO driver, HTTP server, routes, animations, Wi-Fi
 include/    headers and config.hpp (all tunables); include/generated/ holds the embedded video
-helpers/    Python tools: Bad Apple generator, image/base64 tools, noise generator, format docs
+helpers/    Python tools: Bad Apple generator, image/base64 tools, noise generator, color test
+web/        React + Vite control panel (brightness, animations, live preview, frame editor)
 CMakeLists.txt
 ```
 
@@ -67,15 +78,18 @@ drive that appears when the board is in BOOTSEL mode (or use `picotool`).
 
 ## Configuration
 
-- `include/config.hpp` — matrix geometry, bus/pin layout, orientation,
-  default brightness, and timing. Start here.
+- `include/config.hpp` — matrix geometry, bus/pin layout, orientation
+  (`flipVertical` / `flipHorizontal`), wire color order (`wireOrderRGB`),
+  default brightness, and animation/Wi-Fi timing. Start here.
 - Wi-Fi credentials: copy `include/secrets.hpp.example` to
   `include/secrets.hpp` and fill in `WIFI_SSID` / `WIFI_PASSWORD`. The file is
   gitignored.
 
 ## HTTP API
 
-The device serves on port 80 as `http://ledfal.local`.
+The device serves on port 80 as `http://ledfal.local`. Responses carry
+`Access-Control-Allow-Origin: *` and `OPTIONS` preflight is handled, so a
+browser page can call the API directly (see the [Web UI](#web-ui)).
 
 | Method | Path | Description |
 | --- | --- | --- |
@@ -120,12 +134,20 @@ row, three bytes `R, G, B`, for a total of `width * height * 3` bytes,
 standard-base64 encoded with padding and no line breaks. See
 `helpers/BASE64_FORMAT.md`.
 
+The blob is always **R, G, B**; the strip's physical wire order is handled in
+the firmware via `wireOrderRGB` (`include/config.hpp`).
+
 ## Web UI
 
-A local React app (in `web/`) controls the wall over HTTP: brightness,
-animation picker, live status and a frame editor. It talks to the device
-directly (`http://ledfal.local` by default, editable in the header), using the
-firmware's CORS header — no proxy required.
+A local React app (in `web/`) controls the wall over HTTP. It talks to the
+device directly (`http://ledfal.local` by default, editable in the header and
+remembered) using the firmware's CORS header — no proxy required.
+
+- **Brightness** slider (0–255, debounced)
+- **Animation picker** (ids 0–8) plus "resume"
+- **Live preview** of the current frame with a selectable refresh interval
+  (`Off` / `0.5 s` / `1 s` / `2 s` / `5 s`)
+- **Frame editor**: draw on a 21×75 canvas and upload; load the current frame
 
 ```bash
 cd web
@@ -153,11 +175,11 @@ explicitly to `make_badapple.py`.
 ## How it works
 
 At each 60 fps tick the main loop steps the active animation into a
-column-major pixel matrix, transposes it into GRB bit-planes (applying
-brightness and orientation), then streams the planes to every bus with one DMA
-transfer per bus, paced by its PIO state machine. The lwIP/cyw43 callbacks run
-concurrently in IRQ context, so all shared state is accessed under a recursive
-lock (`LwipGuard`).
+column-major pixel matrix, transposes it into color bit-planes (applying
+brightness, orientation, and the configured wire color order), then streams the
+planes to every bus with one DMA transfer per bus, paced by its PIO state
+machine. The lwIP/cyw43 callbacks run concurrently in IRQ context, so all
+shared state is accessed under a recursive lock (`LwipGuard`).
 
 ## Special Thanks
 
