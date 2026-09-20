@@ -106,6 +106,7 @@ curl -X POST -d ''   http://ledfal.local/animation   # resume the selected anima
 | 3 | Rain | Falling drops with fading trails |
 | 4 | Stars | Twinkling colored sparks |
 | 5 | Plasma | Drifting smooth color noise |
+| 6 | Fire2 | Fire with the classic heat ramp (hotter, whiter tips) |
 
 Selection is delta-time driven and frame-rate independent; per-animation
 tunables (speeds, densities) live in `include/config.hpp`.

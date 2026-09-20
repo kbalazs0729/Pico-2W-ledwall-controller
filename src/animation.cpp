@@ -118,7 +118,12 @@ private:
 // on the display frame rate.
 class Fire final : public Animation {
 public:
-    Fire() : m_rng(nextSeed()) {}
+    // RedHeavy keeps red dominant the whole way (black->red->orange->yellow).
+    // Classic saturates red first, then green, then blue, giving hotter,
+    // whiter tips (black->red->orange->yellow->white).
+    enum class Palette : uint8_t { RedHeavy, Classic };
+
+    explicit Fire(Palette palette) : m_palette(palette), m_rng(nextSeed()) {}
 
     void step(float dt, LedData<matrixRows, matrixCols>& matrix) override {
         constexpr float tickSec = 1.0f / fireTickHz;
@@ -135,23 +140,38 @@ public:
 
         for (uint32_t col = 0; col < matrixCols; ++col) {
             for (uint32_t row = 0; row < matrixRows; ++row) {
-                matrix.columns[col].pixels[row] = fireColor(m_heat[row][col]);
+                matrix.columns[col].pixels[row] = color(m_palette, m_heat[row][col]);
             }
         }
     }
 
 private:
+    Palette m_palette;
     uint8_t m_heat[matrixRows][matrixCols] {};
     float m_accum = 0.0f;
     Rng m_rng;
 
-    // black -> red -> orange -> yellow, with a touch of white at the hottest.
-    static Pixel fireColor(uint8_t heat) {
+    static Pixel color(Palette palette, uint8_t heat) {
+        return palette == Palette::Classic ? classic(heat) : redHeavy(heat);
+    }
+
+    // Red stays on top throughout: green only starts once red is well up, and
+    // is bounded so it can never exceed red (that inversion looked green).
+    static Pixel redHeavy(uint8_t heat) {
         uint32_t r = heat;
-        uint32_t g = heat > 96 ? (heat - 96u) * 2u : 0u;
+        uint32_t g = heat > 128 ? (heat - 128u) * 2u : 0u;
         uint32_t b = heat > 224 ? (heat - 224u) * 4u : 0u;
         if (g > 255) g = 255;
         if (b > 255) b = 255;
+        return {static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b)};
+    }
+
+    // Classic heat ramp: red saturates first, then green, then blue.
+    static Pixel classic(uint8_t heat) {
+        uint32_t x = heat * 3u;
+        uint32_t r = x < 255u ? x : 255u;
+        uint32_t g = x > 255u ? (x - 255u > 255u ? 255u : x - 255u) : 0u;
+        uint32_t b = x > 510u ? (x - 510u > 255u ? 255u : x - 510u) : 0u;
         return {static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b)};
     }
 
@@ -354,7 +374,9 @@ std::unique_ptr<Animation> make_animation(AnimationType type) {
         case AnimationType::BadApple:
             return std::make_unique<BadApple>();
         case AnimationType::Fire:
-            return std::make_unique<Fire>();
+            return std::make_unique<Fire>(Fire::Palette::RedHeavy);
+        case AnimationType::Fire2:
+            return std::make_unique<Fire>(Fire::Palette::Classic);
         case AnimationType::Rain:
             return std::make_unique<Rain>();
         case AnimationType::Stars:
