@@ -10,8 +10,9 @@ animations and exposes a small HTTP API, with mDNS discovery, for control.
   plus a 400 µs latch gap)
 - A single universal PIO program drives any bus from **1 to 32 lanes**
   (WS2812/WS2815, 800 kbit/s)
-- Animations: a scrolling **Rainbow** and a 1-bit **Bad Apple** video
-  (5258 frames @ 24 fps) embedded in flash via `.incbin`
+- Animations: a scrolling **Rainbow**, a 1-bit **Bad Apple** video (5258
+  frames @ 24 fps) embedded in flash via `.incbin`, plus procedural
+  **Fire**, **Rain**, **Stars** and **Plasma**
 - Hand-rolled HTTP server on raw lwIP TCP, discoverable at
   `http://ledfal.local`
 - **Non-blocking Wi-Fi** with automatic reconnect and exponential backoff; the
@@ -80,7 +81,7 @@ The device serves on port 80 as `http://ledfal.local`.
 | --- | --- | --- |
 | GET | `/` | HTML endpoint index |
 | GET | `/animation` | Current state, e.g. `{"mode":"animation","animationId":0}` |
-| POST | `/animation` | Select animation by id (0 = Rainbow, 1 = Bad Apple); empty body resumes the current one |
+| POST | `/animation` | Select animation by id (see below); empty body resumes the current one |
 | GET | `/brightness` | Current brightness, e.g. `{"brightness":200}` |
 | POST | `/brightness` | Set global brightness (integer 0–255) |
 | GET | `/matrix` | Current frame as a base64 blob |
@@ -94,6 +95,20 @@ curl -X POST -d '64' http://ledfal.local/brightness
 curl -X POST -d '1'  http://ledfal.local/animation   # play Bad Apple
 curl -X POST -d ''   http://ledfal.local/animation   # resume the selected animation
 ```
+
+### Animations
+
+| id | Name | Description |
+| --- | --- | --- |
+| 0 | Rainbow | Diagonal hue scroll |
+| 1 | Bad Apple | 1-bit video loop |
+| 2 | Fire | Heat-diffusion flames rising from the bottom |
+| 3 | Rain | Falling drops with fading trails |
+| 4 | Stars | Twinkling colored sparks |
+| 5 | Plasma | Drifting smooth color noise |
+
+Selection is delta-time driven and frame-rate independent; per-animation
+tunables (speeds, densities) live in `include/config.hpp`.
 
 ### Frame format
 
