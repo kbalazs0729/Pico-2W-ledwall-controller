@@ -146,6 +146,14 @@ constexpr float starsDecayPerSec = 0.8f;    // fade-out rate (fraction per secon
 constexpr float plasmaScale = 0.09f;
 constexpr float plasmaSpeed = 0.35f;
 
+// Tetris (auto-playing demo): a 10x20 well drawn with 2x2-LED cells, centered
+// on the wall. The AI picks a placement when a piece spawns, then it falls.
+constexpr uint8_t tetrisBoardCols = 10;
+constexpr uint8_t tetrisBoardRows = 20;
+constexpr uint8_t tetrisCellPx = 2;            // LEDs per board cell (square)
+constexpr float tetrisDropIntervalSec = 0.5f;  // gravity step per cell
+constexpr float tetrisFlashSec = 0.3f;         // line-clear flash duration
+
 // ---- Brightness -------------------------------------------------------------------------
 
 // Global, linear output scale applied to every channel at frame load time
