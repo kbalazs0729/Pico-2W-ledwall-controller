@@ -459,6 +459,324 @@ private:
     }
 };
 
+// --- Auto-playing Tetris ---------------------------------------------------
+
+// Piece shapes in spawn orientation as 4x4 bitmasks (bit = y*4 + x). The four
+// rotations are derived from these at compile time.
+constexpr uint16_t rotatePieceCW(uint16_t m) {
+    uint16_t r = 0;
+    for (int y = 0; y < 4; ++y) {
+        for (int x = 0; x < 4; ++x) {
+            if (m & (1u << (y * 4 + x))) {
+                r |= static_cast<uint16_t>(1u << (x * 4 + (3 - y)));
+            }
+        }
+    }
+    return r;
+}
+
+struct TetrisPieces {
+    uint16_t mask[7][4];
+    constexpr TetrisPieces() : mask{} {
+        constexpr uint16_t base[7] = {
+            0x00F0, // I
+            0x0066, // O
+            0x0072, // T
+            0x0036, // S
+            0x0063, // Z
+            0x0071, // J
+            0x0074, // L
+        };
+        for (int p = 0; p < 7; ++p) {
+            uint16_t m = base[p];
+            for (int r = 0; r < 4; ++r) {
+                mask[p][r] = m;
+                m = rotatePieceCW(m);
+            }
+        }
+    }
+};
+constexpr TetrisPieces kTetrisPieces {};
+
+// Standard tetromino colors, same order as the piece table.
+constexpr Pixel kTetrisColors[7] = {
+    {0, 220, 220}, // I cyan
+    {230, 220, 0}, // O yellow
+    {160, 0, 200}, // T purple
+    {0, 200, 0},   // S green
+    {220, 0, 0},   // Z red
+    {0, 80, 220},  // J blue
+    {230, 130, 0}, // L orange
+};
+
+// Auto-playing Tetris demo: on each spawn the AI picks the best rotation and
+// column (by simulating the drop and scoring the result), then the piece falls
+// and locks. Completed rows flash before collapsing; the board resets and the
+// game loops forever.
+class Tetris final : public Animation {
+public:
+    Tetris() : m_rng(nextSeed()) { clearBoard(); }
+
+    void step(float dt, LedData<matrixRows, matrixCols>& matrix) override {
+        switch (m_phase) {
+            case Phase::Falling: {
+                m_timer += dt;
+                while (m_timer >= tetrisDropIntervalSec) {
+                    m_timer -= tetrisDropIntervalSec;
+                    uint16_t mask = kTetrisPieces.mask[m_type][m_rot];
+                    if (!collides(m_board, mask, m_x, m_y + 1)) {
+                        ++m_y;
+                    } else {
+                        lockPiece();
+                        break;
+                    }
+                }
+                break;
+            }
+            case Phase::Flashing:
+                m_timer += dt;
+                if (m_timer >= tetrisFlashSec) {
+                    collapseRows();
+                    spawnPiece();
+                }
+                break;
+
+            case Phase::GameOver:
+                m_timer += dt;
+                if (m_timer >= 1.0f) {
+                    clearBoard();
+                    spawnPiece();
+                }
+                break;
+        }
+        render(matrix);
+    }
+
+private:
+    static constexpr int kCols = tetrisBoardCols;
+    static constexpr int kRows = tetrisBoardRows;
+    static constexpr int kCell = tetrisCellPx;
+    static constexpr int kXOff = (matrixCols - kCols * kCell) / 2;
+    static constexpr int kYOff = (matrixRows - kRows * kCell) / 2;
+
+    enum class Phase : uint8_t { Falling, Flashing, GameOver };
+
+    uint8_t m_board[kRows][kCols] {};
+    Phase m_phase = Phase::GameOver; // timer below triggers the first spawn
+    uint8_t m_type = 0;
+    uint8_t m_rot = 0;
+    int m_x = 0;
+    int m_y = 0;
+    float m_timer = 1.0f;
+    uint8_t m_flashRows[kRows] {};
+    int m_flashCount = 0;
+    uint8_t m_bag[7] {};
+    int m_bagLeft = 0;
+    Rng m_rng;
+
+    static bool collides(const uint8_t b[kRows][kCols], uint16_t mask, int x, int y) {
+        for (int cy = 0; cy < 4; ++cy) {
+            for (int cx = 0; cx < 4; ++cx) {
+                if (!(mask & (1u << (cy * 4 + cx)))) continue;
+                int bx = x + cx;
+                int by = y + cy;
+                if (bx < 0 || bx >= kCols || by >= kRows) return true;
+                if (by >= 0 && b[by][bx] != 0) return true;
+            }
+        }
+        return false;
+    }
+
+    static int minCellY(uint16_t mask) {
+        for (int cy = 0; cy < 4; ++cy) {
+            if (mask & (0xFu << (cy * 4))) return cy;
+        }
+        return 0;
+    }
+
+    void clearBoard() {
+        for (int y = 0; y < kRows; ++y)
+            for (int x = 0; x < kCols; ++x) m_board[y][x] = 0;
+    }
+
+    uint8_t nextFromBag() {
+        if (m_bagLeft == 0) {
+            for (int i = 0; i < 7; ++i) m_bag[i] = static_cast<uint8_t>(i);
+            for (int i = 6; i > 0; --i) {
+                int j = static_cast<int>(m_rng.below(static_cast<uint32_t>(i + 1)));
+                uint8_t t = m_bag[i];
+                m_bag[i] = m_bag[j];
+                m_bag[j] = t;
+            }
+            m_bagLeft = 7;
+        }
+        return m_bag[--m_bagLeft];
+    }
+
+    void spawnPiece() {
+        m_type = nextFromBag();
+
+        // Pick the placement once; the piece then just falls from the top.
+        int bestRot = 0;
+        int bestX = 0;
+        choosePlacement(m_type, bestRot, bestX);
+        m_rot = static_cast<uint8_t>(bestRot);
+        m_x = bestX;
+        m_y = -minCellY(kTetrisPieces.mask[m_type][m_rot]);
+
+        if (collides(m_board, kTetrisPieces.mask[m_type][m_rot], m_x, m_y)) {
+            m_phase = Phase::GameOver;
+            m_timer = 0.0f;
+            return;
+        }
+        m_phase = Phase::Falling;
+        m_timer = 0.0f;
+    }
+
+    void choosePlacement(int type, int& bestRot, int& bestX) {
+        float best = -1e9f;
+        bestRot = 0;
+        bestX = 0;
+        for (int rot = 0; rot < 4; ++rot) {
+            uint16_t mask = kTetrisPieces.mask[type][rot];
+            int startY = -minCellY(mask);
+            for (int x = -3; x < kCols; ++x) {
+                if (collides(m_board, mask, x, startY)) continue;
+                int y = startY;
+                while (!collides(m_board, mask, x, y + 1)) ++y;
+
+                uint8_t tmp[kRows][kCols];
+                for (int yy = 0; yy < kRows; ++yy)
+                    for (int xx = 0; xx < kCols; ++xx) tmp[yy][xx] = m_board[yy][xx];
+                for (int cy = 0; cy < 4; ++cy)
+                    for (int cx = 0; cx < 4; ++cx)
+                        if (mask & (1u << (cy * 4 + cx)))
+                            tmp[y + cy][x + cx] = static_cast<uint8_t>(type + 1);
+
+                float score = evaluate(tmp);
+                if (score > best) {
+                    best = score;
+                    bestRot = rot;
+                    bestX = x;
+                }
+            }
+        }
+    }
+
+    static float evaluate(const uint8_t b[kRows][kCols]) {
+        int heights[kCols] = {};
+        int holes = 0;
+        for (int x = 0; x < kCols; ++x) {
+            int y = 0;
+            while (y < kRows && b[y][x] == 0) ++y;
+            heights[x] = kRows - y;
+            for (; y < kRows; ++y)
+                if (b[y][x] == 0) ++holes;
+        }
+        int agg = 0;
+        int bump = 0;
+        for (int x = 0; x < kCols; ++x) agg += heights[x];
+        for (int x = 0; x + 1 < kCols; ++x) {
+            int d = heights[x] - heights[x + 1];
+            bump += d < 0 ? -d : d;
+        }
+        int lines = 0;
+        for (int y = 0; y < kRows; ++y) {
+            bool full = true;
+            for (int x = 0; x < kCols; ++x)
+                if (b[y][x] == 0) { full = false; break; }
+            if (full) ++lines;
+        }
+        return -0.51f * static_cast<float>(agg) +
+               0.76f * static_cast<float>(lines) -
+               0.36f * static_cast<float>(holes) -
+               0.18f * static_cast<float>(bump);
+    }
+
+    void lockPiece() {
+        uint16_t mask = kTetrisPieces.mask[m_type][m_rot];
+        for (int cy = 0; cy < 4; ++cy)
+            for (int cx = 0; cx < 4; ++cx)
+                if (mask & (1u << (cy * 4 + cx))) {
+                    int by = m_y + cy;
+                    int bx = m_x + cx;
+                    if (by >= 0) m_board[by][bx] = static_cast<uint8_t>(m_type + 1);
+                }
+
+        m_flashCount = 0;
+        for (int y = 0; y < kRows; ++y) {
+            bool full = true;
+            for (int x = 0; x < kCols; ++x)
+                if (m_board[y][x] == 0) { full = false; break; }
+            if (full) m_flashRows[m_flashCount++] = static_cast<uint8_t>(y);
+        }
+
+        if (m_flashCount > 0) {
+            m_phase = Phase::Flashing;
+            m_timer = 0.0f;
+        } else {
+            spawnPiece();
+        }
+    }
+
+    void collapseRows() {
+        uint8_t next[kRows][kCols] {};
+        int dst = kRows - 1;
+        for (int y = kRows - 1; y >= 0; --y) {
+            bool flashed = false;
+            for (int i = 0; i < m_flashCount; ++i)
+                if (m_flashRows[i] == y) { flashed = true; break; }
+            if (flashed) continue;
+            for (int x = 0; x < kCols; ++x) next[dst][x] = m_board[y][x];
+            --dst;
+        }
+        for (int y = 0; y < kRows; ++y)
+            for (int x = 0; x < kCols; ++x) m_board[y][x] = next[y][x];
+        m_flashCount = 0;
+    }
+
+    void render(LedData<matrixRows, matrixCols>& matrix) {
+        for (uint32_t col = 0; col < matrixCols; ++col)
+            for (uint32_t row = 0; row < matrixRows; ++row)
+                matrix.columns[col].pixels[row] = Pixel{0, 0, 0};
+
+        for (int y = 0; y < kRows; ++y)
+            for (int x = 0; x < kCols; ++x)
+                if (m_board[y][x] != 0)
+                    drawCell(matrix, x, y, kTetrisColors[m_board[y][x] - 1]);
+
+        if (m_phase == Phase::Falling) {
+            uint16_t mask = kTetrisPieces.mask[m_type][m_rot];
+            for (int cy = 0; cy < 4; ++cy)
+                for (int cx = 0; cx < 4; ++cx)
+                    if (mask & (1u << (cy * 4 + cx)))
+                        drawCell(matrix, m_x + cx, m_y + cy, kTetrisColors[m_type]);
+        }
+
+        // Blink the completed rows just before they collapse.
+        if (m_phase == Phase::Flashing && (static_cast<int>(m_timer / 0.06f) & 1) == 0) {
+            constexpr Pixel white {255, 255, 255};
+            for (int i = 0; i < m_flashCount; ++i)
+                for (int x = 0; x < kCols; ++x)
+                    drawCell(matrix, x, m_flashRows[i], white);
+        }
+    }
+
+    static void drawCell(LedData<matrixRows, matrixCols>& matrix, int bx, int by, const Pixel& c) {
+        int px0 = kXOff + bx * kCell;
+        int py0 = kYOff + by * kCell;
+        for (int dy = 0; dy < kCell; ++dy) {
+            int py = py0 + dy;
+            if (py < 0 || py >= static_cast<int>(matrixRows)) continue;
+            for (int dx = 0; dx < kCell; ++dx) {
+                int px = px0 + dx;
+                if (px < 0 || px >= static_cast<int>(matrixCols)) continue;
+                matrix.columns[px].pixels[py] = c;
+            }
+        }
+    }
+};
+
 } // namespace
 
 std::unique_ptr<Animation> make_animation(AnimationType type) {
@@ -473,6 +791,8 @@ std::unique_ptr<Animation> make_animation(AnimationType type) {
             return std::make_unique<Rain>();
         case AnimationType::RainFill:
             return std::make_unique<RainFill>();
+        case AnimationType::Tetris:
+            return std::make_unique<Tetris>();
         case AnimationType::Stars:
             return std::make_unique<Stars>();
         case AnimationType::Plasma:

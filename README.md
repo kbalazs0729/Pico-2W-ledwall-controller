@@ -12,8 +12,8 @@ animations and exposes a small HTTP API, with mDNS discovery, for control.
   (WS2812/WS2815, 800 kbit/s)
 - Animations: a scrolling **Rainbow**, a 1-bit **Bad Apple** video (5258
   frames @ 24 fps) embedded in flash via `.incbin`, plus procedural
-  **Fire** (two palettes), **Rain**, **Stars**, **Plasma** and
-  **RainFill** (water level that fills then flushes)
+  **Fire** (two palettes), **Rain**, **Stars**, **Plasma**, **RainFill**
+  (fills then flushes) and an auto-playing **Tetris** demo
 - Hand-rolled HTTP server on raw lwIP TCP, discoverable at
   `http://ledfal.local`
 - **Non-blocking Wi-Fi** with automatic reconnect and exponential backoff; the
@@ -109,6 +109,7 @@ curl -X POST -d ''   http://ledfal.local/animation   # resume the selected anima
 | 5 | Plasma | Drifting smooth color noise |
 | 6 | Fire2 | Fire with the classic heat ramp (hotter, whiter tips) |
 | 7 | RainFill | Rain that fills a water level, then flushes and repeats |
+| 8 | Tetris | Auto-playing Tetris demo (10×20 well) |
 
 Selection is delta-time driven and frame-rate independent; per-animation
 tunables (speeds, densities) live in `include/config.hpp`.
