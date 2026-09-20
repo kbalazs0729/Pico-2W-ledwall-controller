@@ -557,7 +557,9 @@ private:
     static constexpr int kRows = tetrisBoardRows;
     static constexpr int kCell = tetrisCellPx;
     static constexpr int kXOff = (matrixCols - kCols * kCell) / 2;
-    static constexpr int kYOff = (matrixRows - kRows * kCell) / 2;
+    // The well sits on the floor: row 0 of the board is the top of the well,
+    // and the last board row lands on the bottom of the physical wall.
+    static constexpr int kYOff = matrixRows - kRows * kCell;
 
     enum class Phase : uint8_t { Falling, Flashing, GameOver };
 
