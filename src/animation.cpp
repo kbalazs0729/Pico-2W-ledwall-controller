@@ -204,13 +204,49 @@ private:
     }
 };
 
+// A falling raindrop, shared by the Rain and RainFill animations.
+struct Drop {
+    float y;      // head position; 0 = top row
+    float speed;  // rows per second
+    uint8_t col;
+    uint8_t len;  // trail length behind the head
+    Pixel color;
+};
+
+// Respawn a drop above the top (scatter=true spreads it anywhere above so a
+// fresh field starts populated).
+void dropSpawn(Drop& d, Rng& rng, bool scatter) {
+    d.col = static_cast<uint8_t>(rng.below(matrixCols));
+    d.speed = rainSpeedRowsPerSec * (0.6f + rng.byte() / 255.0f * 0.8f);
+    d.len = static_cast<uint8_t>(3 + rng.below(rainTrailLen - 2));
+    d.y = scatter ? -static_cast<float>(rng.below(matrixRows))
+                  : -static_cast<float>(rng.below(8));
+    static const Pixel palette[] = {
+        {0, 64, 255}, {0, 160, 255}, {40, 200, 255}, {180, 220, 255}};
+    d.color = palette[rng.below(sizeof(palette) / sizeof(palette[0]))];
+}
+
+void dropDraw(LedData<matrixRows, matrixCols>& matrix, const Drop& d) {
+    for (uint8_t t = 0; t <= d.len; ++t) {
+        int row = static_cast<int>(d.y) - t;
+        if (row < 0 || row >= static_cast<int>(matrixRows)) continue;
+        // Head is full brightness, the trail fades out behind it.
+        uint32_t scale = static_cast<uint32_t>(d.len - t) * 255u / (d.len + 1);
+        matrix.columns[d.col].pixels[row] = Pixel{
+            static_cast<uint8_t>(d.color.r * scale / 255),
+            static_cast<uint8_t>(d.color.g * scale / 255),
+            static_cast<uint8_t>(d.color.b * scale / 255),
+        };
+    }
+}
+
 // Rain: a fixed pool of drops falling down the columns, each with a fading
 // trail. Drops respawn above the top once they fall past the bottom.
 class Rain final : public Animation {
 public:
     Rain() : m_rng(nextSeed()) {
         // Scatter the first pass so the field starts populated.
-        for (auto& d : m_drops) spawn(d, true);
+        for (auto& d : m_drops) dropSpawn(d, m_rng, true);
     }
 
     void step(float dt, LedData<matrixRows, matrixCols>& matrix) override {
@@ -224,48 +260,104 @@ public:
         for (auto& d : m_drops) {
             d.y += d.speed * dt;
             if (d.y - static_cast<float>(d.len) > static_cast<float>(matrixRows)) {
-                spawn(d, false);
+                dropSpawn(d, m_rng, false);
             }
-            draw(matrix, d);
+            dropDraw(matrix, d);
         }
     }
 
 private:
-    struct Drop {
-        float y;      // head position; 0 = top row
-        float speed;  // rows per second
-        uint8_t col;
-        uint8_t len;  // trail length behind the head
-        Pixel color;
-    };
-
     Drop m_drops[rainDropCount] {};
     Rng m_rng;
+};
 
-    void spawn(Drop& d, bool scatter) {
-        d.col = static_cast<uint8_t>(m_rng.below(matrixCols));
-        d.speed = rainSpeedRowsPerSec * (0.6f + m_rng.byte() / 255.0f * 0.8f);
-        d.len = static_cast<uint8_t>(3 + m_rng.below(rainTrailLen - 2));
-        d.y = scatter ? -static_cast<float>(m_rng.below(matrixRows))
-                      : -static_cast<float>(m_rng.below(8));
-        static const Pixel palette[] = {
-            {0, 64, 255}, {0, 160, 255}, {40, 200, 255}, {180, 220, 255}};
-        d.color = palette[m_rng.below(sizeof(palette) / sizeof(palette[0]))];
+// RainFill: rain plus a water level that rises one row every rainFillRowSec
+// seconds. Once it reaches rainFillMaxFraction of the wall it flushes (drains
+// over rainFillFlushSec) and the cycle repeats.
+class RainFill final : public Animation {
+public:
+    RainFill() : m_rng(nextSeed()) {
+        for (auto& d : m_drops) dropSpawn(d, m_rng, true);
     }
 
-    static void draw(LedData<matrixRows, matrixCols>& matrix, const Drop& d) {
-        for (uint8_t t = 0; t <= d.len; ++t) {
-            int row = static_cast<int>(d.y) - t;
-            if (row < 0 || row >= static_cast<int>(matrixRows)) continue;
-            // Head is full brightness, the trail fades out behind it.
-            uint32_t scale = static_cast<uint32_t>(d.len - t) * 255u / (d.len + 1);
-            matrix.columns[d.col].pixels[row] = Pixel{
-                static_cast<uint8_t>(d.color.r * scale / 255),
-                static_cast<uint8_t>(d.color.g * scale / 255),
-                static_cast<uint8_t>(d.color.b * scale / 255),
-            };
+    void step(float dt, LedData<matrixRows, matrixCols>& matrix) override {
+        constexpr int maxRows = static_cast<int>(rainFillMaxFraction * matrixRows);
+
+        if (m_flushing) {
+            m_level -= static_cast<float>(maxRows) / rainFillFlushSec * dt;
+            if (m_level <= 0.0f) {
+                m_level = 0.0f;
+                m_flushing = false;
+                m_fillAccum = 0.0f;
+            }
+        } else {
+            m_fillAccum += dt;
+            while (m_fillAccum >= rainFillRowSec &&
+                   m_level < static_cast<float>(maxRows)) {
+                m_fillAccum -= rainFillRowSec;
+                m_level += 1.0f;
+            }
+            if (m_level >= static_cast<float>(maxRows)) {
+                m_flushing = true;
+                m_fillAccum = 0.0f;
+            }
         }
+
+        // Water occupies rows [surface, matrixRows); surface is its top row.
+        const int height = static_cast<int>(matrixRows);
+        int surface = height - static_cast<int>(m_level);
+        if (surface < 0) surface = 0;
+        if (surface > height) surface = height;
+
+        // Advance drops; each respawns once its head reaches the water line.
+        for (auto& d : m_drops) {
+            d.y += d.speed * dt;
+            if (d.y > static_cast<float>(surface)) {
+                dropSpawn(d, m_rng, false);
+            }
+        }
+
+        // Background above the water, and the water body below it.
+        for (uint32_t col = 0; col < matrixCols; ++col) {
+            for (int row = 0; row < height; ++row) {
+                if (row < surface) {
+                    matrix.columns[col].pixels[row] = Pixel{0, 0, 0};
+                } else {
+                    // Deeper water fades toward a darker blue.
+                    uint32_t depth = static_cast<uint32_t>(row - surface);
+                    uint32_t dim = depth * 4u < 255u ? 255u - depth * 4u : 96u;
+                    matrix.columns[col].pixels[row] = Pixel{
+                        0,
+                        static_cast<uint8_t>(40u * dim / 255u),
+                        static_cast<uint8_t>(170u * dim / 255u),
+                    };
+                }
+            }
+        }
+
+        // Bright, rippling surface line.
+        if (surface < height) {
+            for (uint32_t col = 0; col < matrixCols; ++col) {
+                uint32_t ripple = (col * 53u + m_ripplePhase) & 63u;
+                matrix.columns[col].pixels[surface] = Pixel{
+                    0,
+                    static_cast<uint8_t>(150u + ripple),
+                    255,
+                };
+            }
+        }
+        m_ripplePhase += 2;
+
+        for (auto& d : m_drops) dropDraw(matrix, d);
     }
+
+private:
+    Drop m_drops[rainDropCount] {};
+    Rng m_rng;
+    float m_level = 0.0f;   // water height in rows
+    float m_fillAccum = 0.0f;
+    bool m_flushing = false;
+    uint32_t m_ripplePhase = 0;
 };
 
 // Stars: sparse colored sparks that fade out over a dark field, so it reads as
@@ -379,6 +471,8 @@ std::unique_ptr<Animation> make_animation(AnimationType type) {
             return std::make_unique<Fire>(Fire::Palette::Classic);
         case AnimationType::Rain:
             return std::make_unique<Rain>();
+        case AnimationType::RainFill:
+            return std::make_unique<RainFill>();
         case AnimationType::Stars:
             return std::make_unique<Stars>();
         case AnimationType::Plasma:

@@ -16,6 +16,7 @@ enum class AnimationType : uint8_t {
     Stars,
     Plasma,
     Fire2, // second fire palette (classic heat ramp)
+    RainFill,
     Count
 };
 

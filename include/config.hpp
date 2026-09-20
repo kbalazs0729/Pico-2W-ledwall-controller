@@ -130,6 +130,13 @@ constexpr uint32_t rainDropCount = 40;
 constexpr float rainSpeedRowsPerSec = 22.0f;
 constexpr uint8_t rainTrailLen = 6;         // max trail length (min is 3)
 
+// RainFill: rain plus a water level that rises one row every rainFillRowSec
+// seconds, up to rainFillMaxFraction of the wall, then drains over
+// rainFillFlushSec and repeats. Drops reuse the rain* constants above.
+constexpr float rainFillRowSec = 1.2f;       // seconds per added water row
+constexpr float rainFillMaxFraction = 0.6f;  // flush when this full
+constexpr float rainFillFlushSec = 0.6f;     // animated drain duration
+
 // Stars / Twinkle: sparse colored sparks on a buffer that fades to black.
 constexpr float starsSpawnPerSec = 18.0f;
 constexpr float starsDecayPerSec = 0.8f;    // fade-out rate (fraction per second)
