@@ -272,6 +272,22 @@ void ApiServer::route_request(tcp_pcb* tpcb, ConnectionState& state, std::size_t
     std::string_view method_str = request_line.substr(0, space1);
     std::string_view path_str = request_line.substr(space1 + 1, space2 - space1 - 1);
 
+    // CORS preflight: answer OPTIONS directly (no endpoint). The normal
+    // Access-Control-Allow-Origin header is added in send_response().
+    if (method_str == "OPTIONS") {
+        state.tx =
+            "HTTP/1.1 204 No Content\r\n"
+            "Access-Control-Allow-Origin: *\r\n"
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+            "Access-Control-Allow-Headers: Content-Type\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n"
+            "\r\n";
+        state.tx_offset = 0;
+        pump_tx(tpcb, state);
+        return;
+    }
+
     Method method;
     if (method_str == "GET") {
         method = Method::GET;
@@ -322,6 +338,9 @@ void ApiServer::send_response(tcp_pcb* tpcb, ConnectionState& state, int status,
     state.tx += "Content-Type: " + std::string(content_type) + "\r\n";
     state.tx += "Content-Length: " + std::to_string(strlen(body)) + "\r\n";
     state.tx += "Connection: close\r\n";
+    // Allow browser JS on another origin (e.g. a local dev page) to read the
+    // response. CORS is a browser read-guard only; it is not authentication.
+    state.tx += "Access-Control-Allow-Origin: *\r\n";
     state.tx += "\r\n";
     state.tx += body;
 
