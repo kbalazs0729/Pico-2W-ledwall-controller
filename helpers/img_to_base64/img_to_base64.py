@@ -3,9 +3,9 @@
 
 The image is resized to width x height and its pixels are emitted as:
     Columns { Rows { uint8_t * 3 } }
-i.e. for each column col, then for each row row, three bytes. The LEDs want
-G,R,B (swapped relative to the doc's R,G,B). The buffer is then
-standard-base64 encoded (A-Z a-z 0-9 + /), padded, no breaks.
+i.e. for each column col, then for each row row, three bytes R,G,B (matching
+the firmware's Pixel{r,g,b} and the web UI). The buffer is then standard-base64
+encoded (A-Z a-z 0-9 + /), padded, no breaks.
 
 This is the inverse of helpers/show_image.py.
 """
@@ -47,14 +47,14 @@ def encode(w, h, path):
 
     img = Image.open(path).convert("RGB").resize((w, h), Image.LANCZOS)
     # img is row-major; the blob is column-major, so walk columns outer.
-    # The LEDs want G,R,B (swapped relative to BASE64_FORMAT.md's R,G,B).
+    # Blob order is R,G,B (BASE64_FORMAT.md), matching the firmware and web UI.
     out = bytearray(w * h * 3)
     i = 0
     for col in range(w):
         for row in range(h):
             r, g, b = img.getpixel((col, row))
-            out[i] = g
-            out[i + 1] = r
+            out[i] = r
+            out[i + 1] = g
             out[i + 2] = b
             i += 3
     return bytes(out)

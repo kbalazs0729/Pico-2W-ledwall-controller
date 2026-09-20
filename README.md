@@ -144,6 +144,7 @@ IP. `npm run build` produces static files in `web/dist`.
   (requires Pillow)
 - `helpers/show_image.py` — decode a base64 blob and display/export it
 - `helpers/perlin_noise.py` — generate colored Perlin-noise frames
+- `helpers/color_test.py` — send a red/green/blue band frame to verify wiring
 - `helpers/BASE64_FORMAT.md` — the blob format specification
 
 Note: the source video (`badapple.mov`) is not tracked, so pass an input video
