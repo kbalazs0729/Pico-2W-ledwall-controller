@@ -38,7 +38,7 @@ void Routes::registerEndpoints(ApiServer& server) {
             "           <li>/matrix - GET: Return the current LED matrix data in base64 format.</li>"
             "           <li>/matrix - POST: Accept base64 encoded LED matrix data, show it (switches to manual mode).</li>"
             "           <li>/animation - GET: Report the current display mode and animation id.</li>"
-            "           <li>/animation - POST: Select animation by integer id (0 = Rainbow, 1 = BadApple, 2 = Fire, 3 = Rain, 4 = Stars, 5 = Plasma, 6 = Fire2); an empty body resumes the current animation.</li>"
+            "           <li>/animation - POST: Select animation by integer id (0 = Rainbow, 1 = BadApple, 2 = Fire, 3 = Rain, 4 = Stars, 5 = Plasma, 6 = Fire2, 7 = RainFill); an empty body resumes the current animation.</li>"
             "           <li>/brightness - GET: Report the current global brightness (0-255).</li>"
             "           <li>/brightness - POST: Set the global brightness (integer 0-255).</li>"
             "           <li>Build date: " __DATE__ " " __TIME__ ".</li>"
