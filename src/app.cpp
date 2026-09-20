@@ -75,13 +75,16 @@ void led_load_frame(const Pixel* pixelsColMajor, uint8_t brightness) {
         uint row = flipVertical ? (matrixRows - 1 - pos) : pos;
 
         for (uint bit = 0; bit < 24; ++bit) {
-            // Gather one bit-plane across all columns. Wire order is GRB,
-            // MSB first (bit 0..7 = green, 8..15 = red, 16..23 = blue).
+            // Gather one bit-plane across all columns. MSB first, three 8-bit
+            // groups per LED; their order is configurable (config.hpp):
+            // RGB strips (bit 0..7 = red) or GRB strips (0..7 = green).
             uint32_t plane = 0;
             for (uint col = 0; col < matrixCols; ++col) {
                 uint lane = flipHorizontal ? (matrixCols - 1 - col) : col;
                 const Pixel& p = pixelsColMajor[col * matrixRows + row];
-                uint8_t channel = bit < 8 ? p.g : (bit < 16 ? p.r : p.b);
+                const uint8_t first = wireOrderRGB ? p.r : p.g;
+                const uint8_t second = wireOrderRGB ? p.g : p.r;
+                uint8_t channel = bit < 8 ? first : (bit < 16 ? second : p.b);
                 if (brightness != 255) {
                     // Global linear scale; full scale maps 255 -> 255.
                     channel = static_cast<uint8_t>((channel * brightness) / 255);

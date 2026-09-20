@@ -31,3 +31,8 @@ desktop.ini
 AUDIT.md
 FINDINGS.md
 PARALLEL_MATRIX_PLAN.md
+
+# Web UI (web/)
+node_modules/
+web/dist/
+web/.vite/

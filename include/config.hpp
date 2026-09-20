@@ -43,6 +43,13 @@ constexpr uint8_t matrixRows = 75;
 constexpr bool flipVertical = true;    // bottom-to-top strips -> reverse rows
 constexpr bool flipHorizontal = false; // right-to-left columns -> reverse lanes
 
+// ---- Color order -----------------------------------------------------------------
+// Wire color order of the strips: the order of the three 8-bit groups sent per
+// LED. Standard WS2812/WS2815 parts are GRB, but some clones are RGB. If red
+// and green appear swapped on the wall (e.g. green shows as red), flip this.
+// Blue is unaffected. The blob/API order is always R,G,B regardless.
+constexpr bool wireOrderRGB = true; // true = RGB strips, false = GRB strips
+
 // ---- Buses -----------------------------------------------------------------------
 
 // A "bus" is one consecutive run of GPIOs driven by a single PIO state

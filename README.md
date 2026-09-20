@@ -120,6 +120,22 @@ row, three bytes `R, G, B`, for a total of `width * height * 3` bytes,
 standard-base64 encoded with padding and no line breaks. See
 `helpers/BASE64_FORMAT.md`.
 
+## Web UI
+
+A local React app (in `web/`) controls the wall over HTTP: brightness,
+animation picker, live status and a frame editor. It talks to the device
+directly (`http://ledfal.local` by default, editable in the header), using the
+firmware's CORS header — no proxy required.
+
+```bash
+cd web
+npm install
+npm run dev        # open http://localhost:5173
+```
+
+Requires Node.js 18+. Point the device field at `ledfal.local` or the board's
+IP. `npm run build` produces static files in `web/dist`.
+
 ## Helper scripts
 
 - `helpers/bad_apple/make_badapple.py` — video → 1-bit frame dump + metadata
@@ -128,6 +144,7 @@ standard-base64 encoded with padding and no line breaks. See
   (requires Pillow)
 - `helpers/show_image.py` — decode a base64 blob and display/export it
 - `helpers/perlin_noise.py` — generate colored Perlin-noise frames
+- `helpers/color_test.py` — send a red/green/blue band frame to verify wiring
 - `helpers/BASE64_FORMAT.md` — the blob format specification
 
 Note: the source video (`badapple.mov`) is not tracked, so pass an input video
